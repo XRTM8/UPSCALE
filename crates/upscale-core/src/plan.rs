@@ -55,8 +55,12 @@ impl ExportPlan {
             filters.push("hqdn3d=1.2:1.2:3:3".to_string());
         }
         if options.smooth && info.frame_rate < 59. {
+            // Interpolation needs future frames. Supply its look-ahead at EOF,
+            // then trim the padding so the final source frames are retained.
+            filters.push("tpad=stop=3:stop_mode=clone".into());
             filters
                 .push("minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1".into());
+            filters.push(format!("trim=duration={:.9}", info.duration_seconds));
         } else if info.frame_rate > 60. {
             filters.push("fps=60".into());
         }

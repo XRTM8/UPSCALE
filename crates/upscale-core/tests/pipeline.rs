@@ -77,6 +77,44 @@ fn exports_verified_vertical_video_with_audio_and_preserves_source() {
 }
 
 #[test]
+fn interpolation_keeps_the_last_frames_and_full_video_duration() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tools, input) = fixture(dir.path(), 1);
+    let info = probe(&tools, &input).unwrap();
+    let output = dir.path().join("smooth.mp4");
+    let manager = JobManager::new(tools.clone());
+    let options = ExportOptions {
+        quality: Quality::Balanced,
+        smooth: true,
+        ..Default::default()
+    };
+    let job = manager.start(input, info, options, output.clone()).unwrap();
+    let result = wait(&manager, &job.id);
+    assert_eq!(result.status, JobStatus::Completed, "{:?}", result.error);
+    let inspection = Command::new(&tools.ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=duration,nb_frames,r_frame_rate",
+            "-of",
+            "json",
+        ])
+        .arg(output)
+        .output()
+        .unwrap();
+    assert!(inspection.status.success());
+    let metadata: serde_json::Value = serde_json::from_slice(&inspection.stdout).unwrap();
+    let video = &metadata["streams"][0];
+    assert_eq!(video["r_frame_rate"], "60/1");
+    assert_eq!(video["nb_frames"], "60", "{metadata}");
+    let duration: f64 = video["duration"].as_str().unwrap().parse().unwrap();
+    assert!((duration - 1.).abs() < 1. / 60., "{metadata}");
+}
+
+#[test]
 fn cancellation_leaves_no_final_or_partial_file_and_busy_jobs_are_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let (tools, input) = fixture(dir.path(), 12);
