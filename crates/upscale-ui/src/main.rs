@@ -354,7 +354,7 @@ fn App() -> impl IntoView {
     });
     view! {
       <div id="studio">
-       <div class="tc-app" dir=move || s.language.get().dir() lang=move || s.language.get().code()
+       <div class="tc-app" class:with-job=move || s.job.get().is_some() dir=move || s.language.get().dir() lang=move || s.language.get().code()
          on:keydown=move |event: web_sys::KeyboardEvent| { if event.key()=="Escape" { s.close(); } }>
         <header class="tc-head">
           <div class="tc-identity"><span class="tc-mark" aria-hidden="true">"U"</span><span class="tc-brand">"UPSCALE"</span></div>
@@ -412,7 +412,7 @@ fn App() -> impl IntoView {
             </section>
           </div>
           <div class="tc-work-bottom"><Icon name="hard-drive"/><span>{move ||s.text("private")}</span>
-            <span class="media-metadata" dir="ltr">{move ||s.source.get().map(|m|format!("{} × {} · {:.1}s{}",m.info.display_width,m.info.display_height,m.info.duration_seconds,if m.native {format!(" · {:.2} fps",m.info.frame_rate)}else{String::new()})).unwrap_or_default()}</span>
+            <span class="media-metadata" dir="ltr">{move ||s.preview().map(|m|format!("{} × {} · {:.1}s{}",m.info.display_width,m.info.display_height,m.info.duration_seconds,if m.native {format!(" · {:.2} fps",m.info.frame_rate)}else{String::new()})).unwrap_or_default()}</span>
           </div>
           <div class="compare" hidden=move || s.result.get().is_none() role="group" aria-label="Preview">
             <button type="button" aria-pressed=move || (!s.show_result.get()).to_string() on:click=move |_|s.show_result.set(false)>{move ||s.text("original")}</button>
@@ -434,7 +434,7 @@ fn App() -> impl IntoView {
         <div class="system-note" hidden=move || !s.source.with(|m|m.as_ref().is_some_and(|m|m.info.hdr))>{move ||s.text("hdr")}</div>
         <footer class="tc-dock">
           <div class="tc-preset"><span class="tc-preset-label">{move ||s.text("output")}</span><div class="tc-preset-value"><span>{move ||match s.options.get().platform {Platform::Instagram=>"Instagram",Platform::Facebook=>"Facebook",Platform::Tiktok=>"TikTok",Platform::Youtube=>"YouTube"}}</span><span class="tc-separator"></span><span>{move ||s.text(match s.options.get().post{PostKind::Reel=>"reel",PostKind::Story=>"story",PostKind::Landscape=>"landscape"})}</span><span class="tc-separator"></span><span dir="ltr">{move ||{let(w,h)=s.dimensions();format!("{w} × {h}")}}</span></div></div>
-          <div class="footer-actions"><button type="button" class="source-button" hidden=move ||s.source.get().is_none() disabled=move ||s.locked() on:click=move |_|s.import()><Icon name="plus"/>{move ||s.text("replace")}</button>
+          <div class="footer-actions"><button type="button" class="source-button" aria-label=move ||s.text("replace") hidden=move ||s.source.get().is_none() disabled=move ||s.locked() on:click=move |_|s.import()><Icon name="plus"/><span>{move ||s.text("replace")}</span></button>
           <button type="button" class="tc-import" disabled=move ||s.locked() ||s.source.with(|m|m.as_ref().is_some_and(|m|!m.native||m.info.hdr))
             on:click=move |_|{if s.source.get_untracked().is_some(){s.export()}else{s.import()}}><Icon name="arrow-up-right"/><span>{move ||s.text(if s.loading.get(){"opening"}else if s.source.get().is_some(){"export"}else{"import"})}</span></button></div>
         </footer>

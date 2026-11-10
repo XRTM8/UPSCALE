@@ -1,5 +1,4 @@
 
-500;600&family=Manrope:wght@400;500;600&display=swap');
 @font-face{font-family:'IBM Plex Sans Arabic';font-weight:400;font-display:swap;src:url('/assets/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFF}
 @font-face{font-family:'IBM Plex Sans Arabic';font-weight:500;font-display:swap;src:url('/assets/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2') format('woff2');unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+200C-200E,U+FB50-FDFF,U+FE70-FEFF}
 @font-face{font-family:Manrope;font-weight:400;font-display:swap;src:url('/assets/fonts/manrope-latin-400-normal.woff2') format('woff2')}
@@ -99,15 +98,16 @@ body{overflow-x:hidden}
 @media(prefers-reduced-transparency:reduce){#studio .tc-glass{background:#20232a;backdrop-filter:none;-webkit-backdrop-filter:none}}
 
 /* Native application layout: a single responsive studio, not a mockup carousel. */
-#studio .tc-app{min-height:100svh;border:0;border-radius:0;box-shadow:none;display:flex;flex-direction:column}
+#studio .tc-app{height:100svh;min-height:640px;border:0;border-radius:0;box-shadow:none;display:flex;flex-direction:column;overflow-y:auto}
+#studio :is(.tc-head,.tc-dock,.job-strip,.system-note,.notice){flex-shrink:0}
 #studio .tc-work{flex:1;min-height:0}
-#studio .tc-preview-area{min-height:calc(clamp(280px,54svh,490px) + 8px)}
-#studio .tc-screen{height:clamp(280px,54svh,490px);width:auto;aspect-ratio:9/16;max-width:100%}
-#studio .tc-screen.landscape{height:auto;width:min(72%,680px);aspect-ratio:16/9}
+#studio .tc-preview-area{height:0;min-height:0}
+#studio .tc-screen{height:100%;max-height:490px;width:auto;aspect-ratio:9/16;max-width:100%;flex-shrink:0}
+#studio .tc-screen.landscape{height:auto;max-height:100%;width:min(72%,680px);aspect-ratio:16/9}
 #studio .tc-icon{display:inline-block;background:currentColor;mask-image:var(--icon);mask-size:contain;mask-position:center;mask-repeat:no-repeat;-webkit-mask-image:var(--icon);-webkit-mask-size:contain;-webkit-mask-position:center;-webkit-mask-repeat:no-repeat}
 #studio .tc-source{max-width:78%}
 #studio .tc-source>span:not(.tc-icon){max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#studio .tc-panel{top:6px;max-height:none}
+#studio .tc-panel{top:6px;max-height:calc(100% - 6px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 #studio .tc-field{margin-bottom:12px}
 #studio .tc-panel-head{margin-bottom:14px}
 #studio .tc-label{margin-bottom:6px}
@@ -137,9 +137,11 @@ body{overflow-x:hidden}
 #studio .job-strip button{font-size:12px;min-height:34px;border-color:var(--tc-line)}
 @media(max-width:700px){
  #studio .tc-app .tc-work{min-height:0;padding:15px 16px}
- #studio .tc-app .tc-preview-area{padding-bottom:55px;min-height:calc(clamp(280px,54svh,490px) + 60px);align-items:center}
- #studio .tc-app .tc-screen{width:auto;height:clamp(280px,54svh,490px);max-width:100%}
+ #studio .tc-app .tc-preview-area{padding-bottom:55px;min-height:0;align-items:center}
+ #studio .tc-app .tc-screen{width:auto;height:100%;max-width:100%}
  #studio .tc-app .tc-screen.landscape{height:auto;width:100%}
+ #studio .tc-app.with-job .tc-work{gap:12px;padding-block:12px}
+ #studio .tc-app.with-job .tc-work-bottom>.tc-icon,#studio .tc-app.with-job .tc-work-bottom>span:not(.media-metadata){display:none}
  #studio .tc-app .tc-work-bottom{font-size:10px}
  #studio .tc-app .tc-panel{top:auto;bottom:49px;padding:17px}
  #studio .tc-app .tc-panel{top:0;bottom:auto;max-height:calc(100% - 54px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
@@ -158,4 +160,4 @@ body{overflow-x:hidden}
  #studio .tc-app .job-strip{padding:12px 18px;gap:9px}
  #studio .tc-app .system-note,#studio .tc-app .notice{padding:11px 18px}
 }
-@media(max-height:760px) and (min-width:701px){#studio .tc-screen{height:390px}#studio .tc-preview-area{min-height:400px}}
+@media(max-width:360px){#studio .source-button>span:not(.tc-icon){display:none}}
