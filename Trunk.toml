@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+public_url = "/"
+
+[watch]
+ignore = ["src-tauri", ".tools", "target", "node_modules"]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 1420
+open = false

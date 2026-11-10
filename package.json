@@ -1,0 +1,20 @@
+{
+  "name": "upscale-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rust video studio with an Arabic-first titanium glass interface",
+  "scripts": {
+    "assets": "node scripts/prepare-assets.mjs",
+    "tauri": "tauri",
+    "dev": "trunk serve",
+    "build": "trunk build --release",
+    "test:ui": "node scripts/smoke-ui.mjs"
+  },
+  "devDependencies": {
+    "@fontsource/ibm-plex-sans-arabic": "^5.2.0",
+    "@fontsource/manrope": "^5.2.0",
+    "@tauri-apps/cli": "^2.12.0",
+    "lucide-static": "^0.468.0",
+    "playwright-core": "^1.65.0"
+  }
+}

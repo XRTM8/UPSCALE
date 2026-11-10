@@ -1,0 +1,24 @@
+[package]
+name = "upscale-studio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "upscale-studio"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[lib]
+name = "upscale_studio"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.8.4"
+upscale-core = { path = "../crates/upscale-core" }
+upscale-types = { path = "../crates/upscale-types" }
+serde.workspace = true
+uuid.workspace = true
