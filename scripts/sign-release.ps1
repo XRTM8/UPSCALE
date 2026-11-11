@@ -76,17 +76,19 @@ try {
         $apk = Join-Path $output "$prefix-android-$variant.apk"
         & $zipalign -P 16 -f 4 $unsignedApk $aligned
         if ($LASTEXITCODE -ne 0) { throw "APK alignment failed for $variant." }
-        & $apksigner sign --ks $androidKey --ks-key-alias upscale --ks-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD --key-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD --out $apk $aligned
+        & $apksigner sign --ks $androidKey --ks-key-alias upscale --ks-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD --key-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD --v4-signing-enabled false --out $apk $aligned
         if ($LASTEXITCODE -ne 0) { throw "APK signing failed for $variant." }
         Remove-Item -LiteralPath $aligned
         & $zipalign -c -P 16 4 $apk
         if ($LASTEXITCODE -ne 0) { throw "APK alignment check failed for $variant." }
 
-        $verified = & $apksigner verify --verbose --print-certs $apk
-        if ($LASTEXITCODE -ne 0 -or !($verified -match "^Signer #1 certificate SHA-256 digest: $certificate$")) {
+        $verified = & $apksigner verify --min-sdk-version $config.bundle.android.minSdkVersion --verbose --print-certs $apk
+        $reportedCertificates = @($verified | Select-String -Pattern 'certificate SHA-256 digest: ([a-fA-F0-9]{64})$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value.ToLowerInvariant() } | Sort-Object -Unique)
+        if ($LASTEXITCODE -ne 0 -or $reportedCertificates.Count -ne 1 -or $reportedCertificates[0] -cne $certificate) {
             throw "APK certificate verification failed for $variant."
         }
-        if (!($verified -match '^Verified using v2 scheme .*: true$') -or !($verified -match '^Number of signers: 1$')) {
+        if (!($verified -match '^Verified using v[23] scheme .*: true$') -or !($verified -match '^Number of signers: 1$')) {
             throw "Invalid APK signing scheme for $variant."
         }
         $badging = & $aapt dump badging $apk
