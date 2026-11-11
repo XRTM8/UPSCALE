@@ -554,9 +554,9 @@ fn App() -> impl IntoView {
           </div>
         </Show>
         <Show when=move || s.error.get().is_some()><div class="notice" role="alert"><span>{move ||s.text("error")}</span><details><summary>{move ||s.text("details")}</summary><pre>{move ||s.error.get().unwrap_or_default()}</pre></details><button type="button" class="tc-close" aria-label=move ||s.text("close") on:click=move |_|s.error.set(None)><Icon name="x"/></button></div></Show>
-        <div class="system-note" hidden=move || s.system.with(|v|v.as_ref().is_none_or(|v|v.tools_available))>
+        <div class="system-note engine-note" hidden=move || s.system.with(|v|v.as_ref().is_none_or(|v|v.tools_available))>
           <span>{move ||s.system.get().map(|v|s.text(if v.desktop{"tools"}else{"browser"})).unwrap_or("")}</span>
-          <button type="button" class="source-button" hidden=move || !s.system.with(|status| status.as_ref().is_some_and(|status| status.can_install_tools))
+          <button type="button" class="engine-setup" hidden=move || !s.system.with(|status| status.as_ref().is_some_and(|status| status.can_install_tools))
             disabled=move || s.locked() on:click=move |_| s.setup()>{move || s.text(if s.preparing.get() {"settingUp"} else {"setup"})}</button>
         </div>
         <div class="system-note" hidden=move || !s.source.with(|m|m.as_ref().is_some_and(|m|m.info.hdr))>{move ||s.text("hdr")}</div>

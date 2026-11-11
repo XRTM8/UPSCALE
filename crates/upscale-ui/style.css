@@ -116,7 +116,8 @@ body{overflow-x:hidden}
 #studio .tc-work-bottom{flex-wrap:wrap}
 #studio .media-metadata{font:400 11px/1.5 Manrope,sans-serif;color:#b4bbc7}
 #studio .footer-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-#studio .source-button{font-size:12px;border-color:var(--tc-line)}
+#studio :is(.source-button,.engine-setup,.tc-update-button){font-size:12px;border-color:var(--tc-line)}
+#studio .engine-note{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 #studio .tc-import:disabled{background:#292d35;color:#9ea6b4;border-color:#414754;box-shadow:none}
 #studio button:not(:disabled),#studio select:not(:disabled),#studio input:not(:disabled){cursor:pointer}
 #studio input:disabled,#studio select:disabled{opacity:.6}
