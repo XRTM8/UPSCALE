@@ -132,4 +132,8 @@ pub struct SystemStatus {
     pub tools_available: bool,
     pub engine: String,
     pub error: Option<String>,
+    #[serde(default)]
+    pub can_install_tools: bool,
+    #[serde(default)]
+    pub can_update: bool,
 }

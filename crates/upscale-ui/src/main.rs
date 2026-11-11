@@ -69,6 +69,23 @@ fn tr(language: Language, key: &'static str) -> &'static str {
         "cancelled" => ["أُلغي التصدير", "Export cancelled"],
         "failed" => ["فشل التصدير", "Export failed"],
         "folder" => ["فتح المجلد", "Open folder"],
+        "share" => ["مشاركة الفيديو", "Share video"],
+        "androidEngine" => [
+            "تصدير MP4 بدقة 1080p باستخدام معالج الفيديو في الهاتف.",
+            "Export 1080p MP4 using the phone’s video encoder.",
+        ],
+        "setup" => ["تجهيز محرك الفيديو", "Set up video engine"],
+        "settingUp" => ["جارٍ تنزيل محرك الفيديو…", "Downloading the video engine…"],
+        "updates" => ["التحديثات", "Updates"],
+        "checkUpdates" => ["التحقق من التحديثات", "Check for updates"],
+        "checkingUpdates" => ["جارٍ التحقق من التحديثات…", "Checking for updates…"],
+        "upToDate" => ["النسخة المثبّتة هي الأحدث.", "You have the latest version."],
+        "newVersion" => ["إصدار متاح", "Available version"],
+        "installUpdate" => ["تنزيل وتثبيت", "Download and install"],
+        "installingUpdate" => [
+            "جارٍ تنزيل التحديث والتحقق من توقيعه…",
+            "Downloading and verifying the update…",
+        ],
         "details" => ["التفاصيل", "Details"],
         "error" => ["تعذّر إكمال العملية", "The operation could not be completed"],
         "original" => ["الأصل", "Original"],
@@ -78,8 +95,8 @@ fn tr(language: Language, key: &'static str) -> &'static str {
             "Browser preview; export is available in the desktop app",
         ],
         "tools" => [
-            "يلزم FFmpeg وffprobe للاستيراد والتصدير. راجع تعليمات التشغيل.",
-            "FFmpeg and ffprobe are required. See the setup instructions.",
+            "يتطلب الاستيراد والتصدير تجهيز محرك FFmpeg.",
+            "Set up FFmpeg to import and export videos.",
         ],
         "classic" => [
             "المحرك الحالي: تحسين تقليدي؛ نماذج AI لم تُفعّل بعد.",
@@ -109,6 +126,17 @@ enum Panel {
     None,
     Processing,
     Output,
+    Updates,
+}
+
+#[derive(Clone, Default)]
+enum UpdateStatus {
+    #[default]
+    Idle,
+    Checking,
+    Current,
+    Available(String),
+    Installing,
 }
 
 #[derive(Clone, Copy)]
@@ -123,6 +151,8 @@ struct Studio {
     system: RwSignal<Option<SystemStatus>>,
     job: RwSignal<Option<JobSnapshot>>,
     error: RwSignal<Option<String>>,
+    update: RwSignal<UpdateStatus>,
+    preparing: RwSignal<bool>,
 }
 
 impl Studio {
@@ -134,7 +164,72 @@ impl Studio {
             .with(|job| job.as_ref().is_some_and(|j| !j.status.is_terminal()))
     }
     fn locked(self) -> bool {
-        self.loading.get() || self.running()
+        self.loading.get()
+            || self.running()
+            || self.preparing.get()
+            || matches!(
+                self.update.get(),
+                UpdateStatus::Checking | UpdateStatus::Installing
+            )
+    }
+    fn android(self) -> bool {
+        self.system.with(|status| {
+            status
+                .as_ref()
+                .is_some_and(|status| status.engine == "android-media3")
+        })
+    }
+    fn setup(self) {
+        if self.locked() {
+            return;
+        }
+        self.preparing.set(true);
+        self.error.set(None);
+        spawn_local(async move {
+            match bridge::call("install_media_tools", &serde_json::json!({})).await {
+                Ok(status) => self.system.set(Some(status)),
+                Err(error) => self.error.set(Some(error)),
+            }
+            self.preparing.set(false);
+        });
+    }
+    fn check_update(self) {
+        if self.locked() {
+            return;
+        }
+        self.update.set(UpdateStatus::Checking);
+        self.error.set(None);
+        spawn_local(async move {
+            match bridge::call::<Option<String>>("check_for_update", &serde_json::json!({})).await {
+                Ok(Some(version)) => self.update.set(UpdateStatus::Available(version)),
+                Ok(None) => self.update.set(UpdateStatus::Current),
+                Err(error) => {
+                    self.update.set(UpdateStatus::Idle);
+                    self.error.set(Some(error));
+                }
+            }
+        });
+    }
+    fn install_update(self) {
+        if self.locked() {
+            return;
+        }
+        let UpdateStatus::Available(version) = self.update.get_untracked() else {
+            return;
+        };
+        self.update.set(UpdateStatus::Installing);
+        self.error.set(None);
+        spawn_local(async move {
+            match bridge::call::<()>("install_update", &serde_json::json!({"version": version}))
+                .await
+            {
+                Ok(()) => self.update.set(UpdateStatus::Idle),
+                Err(error) => {
+                    self.update.set(UpdateStatus::Available(version));
+                    self.error.set(Some(error));
+                }
+            }
+        });
     }
     fn preview(self) -> Option<ImportedMedia> {
         if self.show_result.get() {
@@ -159,11 +254,12 @@ impl Studio {
     fn close(self) {
         let panel = self.panel.get_untracked();
         self.panel.set(Panel::None);
-        bridge::focus_tool(if panel == Panel::Output {
-            "output"
-        } else {
-            "processing"
-        });
+        match panel {
+            Panel::Output => bridge::focus_tool("output"),
+            Panel::Processing => bridge::focus_tool("processing"),
+            Panel::Updates => bridge::focus_tool("updates"),
+            Panel::None => {}
+        }
     }
     fn import(self) {
         if self.locked() {
@@ -324,6 +420,8 @@ fn App() -> impl IntoView {
         system: RwSignal::new(None),
         job: RwSignal::new(None),
         error: RwSignal::new(None),
+        update: RwSignal::new(UpdateStatus::Idle),
+        preparing: RwSignal::new(false),
     };
     Effect::new(move |_| {
         let language = s.language.get();
@@ -345,10 +443,18 @@ fn App() -> impl IntoView {
                 tools_available: false,
                 engine: "browser-preview".into(),
                 error: None,
+                can_install_tools: false,
+                can_update: false,
             })
         };
         match result {
-            Ok(status) => s.system.set(Some(status)),
+            Ok(status) => {
+                s.system.set(Some(status));
+                if s.android() {
+                    s.options
+                        .update(|options| options.resolution = Resolution::FullHd);
+                }
+            }
             Err(error) => s.error.set(Some(error)),
         }
     });
@@ -359,7 +465,11 @@ fn App() -> impl IntoView {
         <header class="tc-head">
           <div class="tc-identity"><span class="tc-mark" aria-hidden="true">"U"</span><span class="tc-brand">"UPSCALE"</span></div>
           <div class="tc-session"><span class="tc-project">{move || s.text("project")}</span></div>
-          <div class="tc-head-actions"><button type="button" class="tc-language" aria-label=move || if s.language.get()==Language::Ar {"Switch to English"} else {"التبديل إلى العربية"}
+          <div class="tc-head-actions"><button type="button" class="tc-update-button" data-open="updates" aria-controls="updates-panel"
+            aria-expanded=move || (s.panel.get() == Panel::Updates).to_string()
+            hidden=move || !s.system.with(|status| status.as_ref().is_some_and(|status| status.can_update))
+            on:click=move |_| s.panel.update(|p| *p=if *p==Panel::Updates {Panel::None}else{Panel::Updates})>{move || s.text("updates")}</button>
+            <button type="button" class="tc-language" aria-label=move || if s.language.get()==Language::Ar {"Switch to English"} else {"التبديل إلى العربية"}
             on:click=move |_| s.language.update(|language|*language=if *language==Language::Ar{Language::En}else{Language::Ar})>{move || if s.language.get()==Language::Ar {"EN"} else {"عربي"}}</button></div>
         </header>
         <main class="tc-work">
@@ -389,9 +499,9 @@ fn App() -> impl IntoView {
               <label class="tc-field"><span class="tc-label">{move || s.text("quality")}</span><select disabled=move || s.locked() prop:value=move || if s.options.get().quality==Quality::Maximum {"maximum"}else{"balanced"}
                 on:change=move |event|s.options.update(|o|o.quality=if value(&event)=="balanced"{Quality::Balanced}else{Quality::Maximum})>
                 <option value="maximum">{move || s.text("maximum")}</option><option value="balanced">{move || s.text("balanced")}</option></select></label>
-              <div class="tc-toggles"><Toggle studio=s field="denoise"/><Toggle studio=s field="detail"/><Toggle studio=s field="smooth"/></div>
-              <p class="tc-note" hidden=move || !s.options.get().smooth>{move || s.text("smoothNote")}</p>
-              <p class="tc-note">{move || s.text("classic")}</p>
+              <div class="tc-toggles" hidden=move || s.android()><Toggle studio=s field="denoise"/><Toggle studio=s field="detail"/><Toggle studio=s field="smooth"/></div>
+              <p class="tc-note" hidden=move || s.android() || !s.options.get().smooth>{move || s.text("smoothNote")}</p>
+              <p class="tc-note">{move || s.text(if s.android() {"androidEngine"} else {"classic"})}</p>
               <button type="button" class="tc-done" on:click=move |_|s.close()>{move ||s.text("done")}</button>
             </section>
             <section class="tc-panel tc-glass" id="output-panel" hidden=move || s.panel.get()!=Panel::Output aria-label=move || s.text("output")>
@@ -404,11 +514,25 @@ fn App() -> impl IntoView {
                 <option value="reel">{move ||s.text("reel")}</option><option value="story" disabled=move || s.options.get().platform==Platform::Youtube>{move ||s.text("story")}</option><option value="landscape">{move ||s.text("landscape")}</option></select></label>
               <label class="tc-field"><span class="tc-label">{move ||s.text("resolution")}</span><select disabled=move || s.locked() prop:value=move || if s.options.get().resolution==Resolution::Uhd {"uhd"}else{"full_hd"}
                 on:change=move |event|s.options.update(|o|o.resolution=if value(&event)=="uhd"{Resolution::Uhd}else{Resolution::FullHd})>
-                <option value="full_hd">"1080p"</option><option value="uhd" disabled=move || matches!(s.options.get().platform,Platform::Instagram|Platform::Facebook)>"4K"</option></select></label>
+                <option value="full_hd">"1080p"</option><option value="uhd" disabled=move || s.android() || matches!(s.options.get().platform,Platform::Instagram|Platform::Facebook)>"4K"</option></select></label>
               <label class="tc-field"><span class="tc-label">{move ||s.text("fit")}</span><select disabled=move || s.locked() prop:value=move || if s.options.get().fit==Fit::Cover {"cover"}else{"contain"}
                 on:change=move |event|s.options.update(|o|o.fit=if value(&event)=="cover"{Fit::Cover}else{Fit::Contain})>
                 <option value="contain">{move ||s.text("contain")}</option><option value="cover">{move ||s.text("cover")}</option></select></label>
               <button type="button" class="tc-done" on:click=move |_|s.close()>{move ||s.text("done")}</button>
+            </section>
+            <section class="tc-panel tc-glass" id="updates-panel" hidden=move || s.panel.get()!=Panel::Updates aria-label=move || s.text("updates")>
+              <PanelHeader studio=s title="updates"/>
+              <p class="tc-note" aria-live="polite">{move || match s.update.get() {
+                  UpdateStatus::Idle => String::new(),
+                  UpdateStatus::Checking => s.text("checkingUpdates").into(),
+                  UpdateStatus::Current => s.text("upToDate").into(),
+                  UpdateStatus::Available(version) => format!("{} · {version}", s.text("newVersion")),
+                  UpdateStatus::Installing => s.text("installingUpdate").into(),
+              }}</p>
+              <button type="button" class="tc-done" hidden=move || matches!(s.update.get(), UpdateStatus::Available(_) | UpdateStatus::Installing)
+                disabled=move || s.locked() on:click=move |_| s.check_update()>{move || s.text("checkUpdates")}</button>
+              <button type="button" class="tc-done" hidden=move || !matches!(s.update.get(), UpdateStatus::Available(_))
+                disabled=move || s.locked() on:click=move |_| s.install_update()>{move || s.text("installUpdate")}</button>
             </section>
           </div>
           <div class="tc-work-bottom"><Icon name="hard-drive"/><span>{move ||s.text("private")}</span>
@@ -425,12 +549,16 @@ fn App() -> impl IntoView {
               <b dir="ltr">{move ||s.job.get().map(|j|format!("{:.0}%",j.progress*100.)).unwrap_or_default()}</b></div>
             <div class="job-progress" role="progressbar" aria-label=move ||s.text("export") aria-valuemin="0" aria-valuemax="100" aria-valuenow=move ||s.job.get().map(|j|j.progress*100.).unwrap_or(0.)><span style:width=move ||s.job.get().map(|j|format!("{}%",j.progress*100.)).unwrap_or("0%".into())></span></div>
             <button type="button" hidden=move || !s.running() on:click=move |_|s.cancel()>{move ||s.text("cancel")}</button>
-            <button type="button" hidden=move || !s.job.with(|j|j.as_ref().is_some_and(|j|j.status==JobStatus::Completed)) on:click=move |_|s.show_output()><Icon name="folder-open"/>{move ||s.text("folder")}</button>
+            <button type="button" hidden=move || !s.job.with(|j|j.as_ref().is_some_and(|j|j.status==JobStatus::Completed)) on:click=move |_|s.show_output()><Icon name="folder-open"/>{move ||s.text(if s.android() {"share"} else {"folder"})}</button>
             <details hidden=move || !s.job.with(|j|j.as_ref().is_some_and(|j|j.error.is_some()))><summary>{move ||s.text("details")}</summary><pre>{move ||s.job.get().and_then(|j|j.error).unwrap_or_default()}</pre></details>
           </div>
         </Show>
         <Show when=move || s.error.get().is_some()><div class="notice" role="alert"><span>{move ||s.text("error")}</span><details><summary>{move ||s.text("details")}</summary><pre>{move ||s.error.get().unwrap_or_default()}</pre></details><button type="button" class="tc-close" aria-label=move ||s.text("close") on:click=move |_|s.error.set(None)><Icon name="x"/></button></div></Show>
-        <div class="system-note" hidden=move || s.system.with(|v|v.as_ref().is_none_or(|v|v.desktop&&v.tools_available))>{move ||s.system.get().map(|v|s.text(if v.desktop{"tools"}else{"browser"})).unwrap_or("")}</div>
+        <div class="system-note" hidden=move || s.system.with(|v|v.as_ref().is_none_or(|v|v.tools_available))>
+          <span>{move ||s.system.get().map(|v|s.text(if v.desktop{"tools"}else{"browser"})).unwrap_or("")}</span>
+          <button type="button" class="source-button" hidden=move || !s.system.with(|status| status.as_ref().is_some_and(|status| status.can_install_tools))
+            disabled=move || s.locked() on:click=move |_| s.setup()>{move || s.text(if s.preparing.get() {"settingUp"} else {"setup"})}</button>
+        </div>
         <div class="system-note" hidden=move || !s.source.with(|m|m.as_ref().is_some_and(|m|m.info.hdr))>{move ||s.text("hdr")}</div>
         <footer class="tc-dock">
           <div class="tc-preset"><span class="tc-preset-label">{move ||s.text("output")}</span><div class="tc-preset-value"><span>{move ||match s.options.get().platform {Platform::Instagram=>"Instagram",Platform::Facebook=>"Facebook",Platform::Tiktok=>"TikTok",Platform::Youtube=>"YouTube"}}</span><span class="tc-separator"></span><span>{move ||s.text(match s.options.get().post{PostKind::Reel=>"reel",PostKind::Story=>"story",PostKind::Landscape=>"landscape"})}</span><span class="tc-separator"></span><span dir="ltr">{move ||{let(w,h)=s.dimensions();format!("{w} × {h}")}}</span></div></div>
