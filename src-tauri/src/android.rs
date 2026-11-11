@@ -14,7 +14,7 @@ pub(crate) struct AndroidMedia {
 
 pub(crate) fn configure(builder: Builder<Wry>) -> Builder<Wry> {
     builder.plugin(
-        tauri::plugin::Builder::new("android-media")
+        tauri::plugin::Builder::<Wry, ()>::new("android-media")
             .setup(|app, api| {
                 let plugin =
                     api.register_android_plugin("com.xrtm8.upscale", "AndroidMediaPlugin")?;

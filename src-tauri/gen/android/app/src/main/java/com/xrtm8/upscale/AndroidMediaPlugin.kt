@@ -78,10 +78,14 @@ class AndroidMediaPlugin(private val activity: Activity) : Plugin(activity) {
         importing = true
         io.execute {
             val id = UUID.randomUUID().toString()
-            val file = File(cache, "source-$id.video")
+            var staged: File? = null
             val result = runCatching {
                 val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                     ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Video"
+                val suffix = name.substringAfterLast('.', "mp4").lowercase()
+                    .takeIf { it in setOf("mp4", "mov", "m4v", "mkv", "webm", "avi") } ?: "mp4"
+                val file = File(cache, "source-$id.$suffix")
+                staged = file
                 val input = requireNotNull(resolver.openInputStream(uri)) { "Cannot read the selected video." }
                 input.use { stream -> file.outputStream().use { stream.copyTo(it) } }
                 Source(id, file, inspect(file, name))
@@ -95,7 +99,7 @@ class AndroidMediaPlugin(private val activity: Activity) : Plugin(activity) {
                     source = imported
                     invoke.resolve(media(imported.id, imported.file, imported.info))
                 }.onFailure { error ->
-                    file.delete()
+                    staged?.delete()
                     invoke.reject(error.message ?: "Cannot import the video.")
                 }
             }

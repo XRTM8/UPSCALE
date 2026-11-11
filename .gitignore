@@ -15,3 +15,6 @@
 *.keystore
 *.jks
 *.dpapi
+*.p12
+windows-updater.key
+*.upscale-signing-backup
