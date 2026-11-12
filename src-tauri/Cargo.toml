@@ -1,0 +1,35 @@
+[package]
+name = "upscale-studio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "upscale-studio"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+installed-updater = ["dep:tauri-plugin-updater"]
+
+[lib]
+name = "upscale_studio"
+crate-type = ["rlib", "cdylib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.8.4"
+upscale-types = { path = "../crates/upscale-types" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+upscale-core = { path = "../crates/upscale-core" }
+
+[target.'cfg(windows)'.dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "native-tls", "system-proxy"] }
+sha2 = "0.10.9"
+tempfile = "3"
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+tauri-plugin-updater = { version = "2.14.1", default-features = false, features = ["native-tls", "system-proxy"], optional = true }

@@ -1,0 +1,129 @@
+name: Build and verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Prepare Rust
+        shell: pwsh
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-rust-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ${{ runner.os }}-rust-
+      - name: Prepare tooling and assets
+        shell: pwsh
+        run: |
+          npm install --global pnpm@11.25.0
+          pnpm install --frozen-lockfile
+          pnpm assets
+          . ./scripts/install-trunk.ps1
+          . ./scripts/install-media-tools.ps1
+          (Join-Path $PWD '.tools/bin') >> $env:GITHUB_PATH
+          (Join-Path $PWD '.tools/ffmpeg/ffmpeg-9.0.2-essentials_build/bin') >> $env:GITHUB_PATH
+      - name: Formatting and Rust checks
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy -p upscale-core -p upscale-studio --features upscale-studio/installed-updater --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy -p upscale-ui --target wasm32-unknown-unknown -- -D warnings
+          exit $LASTEXITCODE
+      - name: Real video pipeline tests
+        run: cargo test -p upscale-core --locked
+      - name: Build portable Windows executable
+        run: pnpm tauri build --no-bundle
+      - name: Verify responsive UI and local preview
+        run: pnpm test:ui
+      - name: Build Windows installer with signed-update support
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-input -Force | Out-Null
+          Copy-Item -LiteralPath target/release/upscale-studio.exe -Destination release-input/portable.exe
+          pnpm tauri build --bundles nsis --features installed-updater
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $config = Get-Content -LiteralPath src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $installer = "target/release/bundle/nsis/$($config.productName)_$($config.version)_x64-setup.exe"
+          Copy-Item -LiteralPath $installer -Destination release-input/setup.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upscale-windows-release-input
+          path: release-input/
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-ubuntu24-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'src-tauri/gen/android/**/*.gradle.kts', 'src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: android-ubuntu24-
+      - name: Prepare Rust, Android NDK, and Trunk
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --target aarch64-linux-android --target armv7-linux-androideabi --target i686-linux-android --target x86_64-linux-android
+          ndk="$ANDROID_HOME/ndk/29.0.14206865"
+          test -f "$ndk/source.properties"
+          printf 'NDK_HOME=%s\nANDROID_NDK_HOME=%s\nANDROID_NDK_ROOT=%s\n' "$ndk" "$ndk" "$ndk" >> "$GITHUB_ENV"
+          release=$(curl -fsSL https://api.github.com/repos/trunk-rs/trunk/releases/tags/v0.22.1)
+          asset=$(jq -er '.assets[] | select(.name == "trunk-x86_64-unknown-linux-gnu.tar.gz")' <<< "$release")
+          curl -fsSL "$(jq -er .browser_download_url <<< "$asset")" -o "$RUNNER_TEMP/trunk.tar.gz"
+          digest=$(jq -er '.digest | select(startswith("sha256:")) | ltrimstr("sha256:")' <<< "$asset")
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/trunk.tar.gz" | sha256sum -c
+          mkdir -p "$RUNNER_TEMP/upscale-bin"
+          tar -xzf "$RUNNER_TEMP/trunk.tar.gz" -C "$RUNNER_TEMP/upscale-bin" trunk
+          echo "$RUNNER_TEMP/upscale-bin" >> "$GITHUB_PATH"
+          npm install --global pnpm@11.25.0
+          pnpm install --frozen-lockfile
+          pnpm assets
+      - name: Build universal and ARM64 APKs
+        shell: bash
+        run: |
+          pnpm tauri android build --ci --apk
+          pnpm tauri android build --ci --apk --split-per-abi --target aarch64
+          apk_dir=src-tauri/gen/android/app/build/outputs/apk
+          mkdir -p release-input
+          cp "$apk_dir/universal/release/app-universal-release-unsigned.apk" release-input/universal-unsigned.apk
+          cp "$apk_dir/arm64/release/app-arm64-release-unsigned.apk" release-input/arm64-v8a-unsigned.apk
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: upscale-android-release-input
+          path: release-input/
+          if-no-files-found: error
+          retention-days: 14

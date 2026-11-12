@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Local studio window; file access is granted per user-selected file by Rust.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
