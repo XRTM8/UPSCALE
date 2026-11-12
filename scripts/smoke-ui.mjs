@@ -86,7 +86,7 @@ try {
   const generated = spawnSync(process.env.UPSCALE_FFMPEG || "ffmpeg", ["-hide_banner", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=180x320:rate=24:duration=1", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", fixture], { windowsHide: true });
   assert.equal(generated.status, 0, generated.stderr?.toString());
   const chooser = page.waitForEvent("filechooser");
-  await page.locator(".tc-import").click();
+  await page.locator(".tc-empty-import").click();
   await (await chooser).setFiles(fixture);
   await page.waitForFunction(() => !document.querySelector(".tc-video").hidden && document.querySelector(".tc-video").readyState >= 1);
   assert.match(await page.locator(".tc-source").textContent(), /مقطع معاينة/);
@@ -98,6 +98,7 @@ try {
   const native = await browser.newContext({ viewport: { width: 1180, height: 820 } });
   await native.route("**/fixture.mp4", (route) => route.fulfill({ path: fixture, contentType: "video/mp4" }));
   await native.addInitScript(() => {
+    let statusRequests = 0;
     const info = { name: "source.mp4", width: 180, height: 320, displayWidth: 180, displayHeight: 320, durationSeconds: 1, frameRate: 24, codec: "h264", hasAudio: false, hdr: false, interlaced: false, sizeBytes: 1000, videoStream: 0 };
     const job = { id: "test-job", status: "completed", progress: 1, processedSeconds: 1, outputName: "result.mp4", error: null };
     window.__TAURI__ = { core: {
@@ -106,7 +107,10 @@ try {
         switch (command) {
           case "system_status": return { desktop: true, toolsAvailable: true, engine: "test-transport", error: null };
           case "import_video": return { id: "test-source", previewUrl: "source.mp4", native: true, info };
-          case "start_export": return job;
+          case "start_export": return { ...job, status: "running", progress: 0.5 };
+          case "job_status":
+            if (++statusRequests === 1) throw new Error("Temporary transport failure");
+            return job;
           case "preview_export": return { id: "test-result", previewUrl: "result.mp4", native: true, info: { ...info, name: "result.mp4", width: 1080, height: 1920, displayWidth: 1080, displayHeight: 1920 } };
           default: throw new Error(`Unexpected test command: ${command}`);
         }

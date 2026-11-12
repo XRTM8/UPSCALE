@@ -33,8 +33,9 @@ struct Preferences {
 fn tr(language: Language, key: &'static str) -> &'static str {
     let pair = match key {
         "project" => ["استوديو الفيديو", "Video studio"],
-        "sample" => ["مشهد تجريبي", "Illustrative sample"],
-        "sampleName" => ["استورد المقطع الأصلي للبدء", "Import your original footage"],
+        "noSource" => ["لا يوجد فيديو", "No video loaded"],
+        "preview" => ["معاينة الفيديو", "Video preview"],
+        "reconnecting" => ["جارٍ استعادة حالة التصدير", "Reconnecting to the export"],
         "processing" => ["المعالجة", "Processing"],
         "output" => ["الإخراج", "Output"],
         "quality" => ["وضع الجودة", "Quality mode"],
@@ -150,6 +151,7 @@ struct Studio {
     loading: RwSignal<bool>,
     system: RwSignal<Option<SystemStatus>>,
     job: RwSignal<Option<JobSnapshot>>,
+    reconnecting: RwSignal<bool>,
     error: RwSignal<Option<String>>,
     update: RwSignal<UpdateStatus>,
     preparing: RwSignal<bool>,
@@ -303,33 +305,47 @@ impl Studio {
                 &serde_json::json!({"sourceId":source.id,"options":options}),
             )
             .await;
-            self.loading.set(false);
             let mut current = match started {
                 Ok(Some(job)) => job,
-                Ok(None) => return,
+                Ok(None) => {
+                    self.loading.set(false);
+                    return;
+                }
                 Err(error) => {
+                    self.loading.set(false);
                     self.error.set(Some(error));
                     return;
                 }
             };
             self.result.set(None);
             self.show_result.set(false);
+            self.job.set(Some(current.clone()));
+            self.loading.set(false);
+            let mut failures = 0_u32;
             loop {
-                self.job.set(Some(current.clone()));
                 if current.status.is_terminal() {
                     break;
                 }
-                gloo_timers::future::TimeoutFuture::new(400).await;
+                gloo_timers::future::TimeoutFuture::new(400 * (1 << failures.min(4))).await;
                 match bridge::call::<JobSnapshot>(
                     "job_status",
                     &serde_json::json!({"jobId":current.id}),
                 )
                 .await
                 {
-                    Ok(snapshot) => current = snapshot,
-                    Err(error) => {
-                        self.error.set(Some(error));
-                        break;
+                    Ok(snapshot) => {
+                        current = snapshot;
+                        self.job.set(Some(current.clone()));
+                        if failures >= 3 {
+                            self.reconnecting.set(false);
+                        }
+                        failures = 0;
+                    }
+                    Err(_) => {
+                        failures = failures.saturating_add(1);
+                        if failures == 3 {
+                            self.reconnecting.set(true);
+                        }
                     }
                 }
             }
@@ -340,11 +356,22 @@ impl Studio {
                 )
                 .await
                 {
-                    Ok(media) => {
+                    Ok(media)
+                        if self.job.with_untracked(|job| {
+                            job.as_ref().is_some_and(|job| job.id == current.id)
+                        }) =>
+                    {
                         self.result.set(Some(bridge::resolve_media(media)));
                         self.show_result.set(true);
                     }
-                    Err(error) => self.error.set(Some(error)),
+                    Err(error)
+                        if self.job.with_untracked(|job| {
+                            job.as_ref().is_some_and(|job| job.id == current.id)
+                        }) =>
+                    {
+                        self.error.set(Some(error))
+                    }
+                    _ => {}
                 }
             }
         });
@@ -419,6 +446,7 @@ fn App() -> impl IntoView {
         loading: RwSignal::new(false),
         system: RwSignal::new(None),
         job: RwSignal::new(None),
+        reconnecting: RwSignal::new(false),
         error: RwSignal::new(None),
         update: RwSignal::new(UpdateStatus::Idle),
         preparing: RwSignal::new(false),
@@ -473,15 +501,15 @@ fn App() -> impl IntoView {
             on:click=move |_| s.language.update(|language|*language=if *language==Language::Ar{Language::En}else{Language::Ar})>{move || if s.language.get()==Language::Ar {"EN"} else {"عربي"}}</button></div>
         </header>
         <main class="tc-work">
-          <div class="tc-work-top"><div class="tc-source" aria-live="polite"><Icon name="film"/><span dir="auto" title=move || s.preview().map(|m|m.info.name).unwrap_or_default()>{move || s.preview().map(|m|m.info.name).unwrap_or_else(||s.text("sampleName").into())}</span></div>
+          <div class="tc-work-top"><div class="tc-source" aria-live="polite"><Icon name="film"/><span dir="auto" title=move || s.preview().map(|m|m.info.name).unwrap_or_default()>{move || s.preview().map(|m|m.info.name).unwrap_or_else(||s.text("noSource").into())}</span></div>
             <span class="tc-format" dir="ltr">{move || { let (w,h)=s.dimensions(); if w>h {"16:9"}else{"9:16"} }}</span>
           </div>
           <div class="tc-preview-area">
-            <div class="tc-screen" class:landscape=move || s.options.get().post==PostKind::Landscape>
-              <div class="tc-art" hidden=move || s.source.get().is_some() role="img" aria-label=move || s.text("sample")>
-                <div class="tc-art-wall"></div><div class="tc-art-arch"></div><div class="tc-art-inner"></div><div class="tc-art-light"></div><div class="tc-art-step"></div><div class="tc-art-vase"></div><div class="tc-art-grain"></div>
+            <div class="tc-screen" class:landscape=move || s.options.get().post==PostKind::Landscape class:empty=move || s.source.get().is_none()>
+              <div class="tc-empty" hidden=move || s.source.get().is_some()>
+                <span class="tc-empty-icon"><Icon name="film"/></span>
+                <button type="button" class="tc-empty-import" disabled=move || s.locked() on:click=move |_|s.import()>{move ||s.text("choose")}</button>
               </div>
-              <div class="tc-demo" hidden=move || s.source.get().is_some()>{move || s.text("sample")}</div>
               <video class="tc-video" controls playsinline preload="metadata" hidden=move || s.source.get().is_none()
                 src=move || s.preview().map(|m|m.preview_url).unwrap_or_default()
                 style:object-fit=move || if s.options.get().fit==Fit::Cover {"cover"}else{"contain"}
@@ -538,14 +566,14 @@ fn App() -> impl IntoView {
           <div class="tc-work-bottom"><Icon name="hard-drive"/><span>{move ||s.text("private")}</span>
             <span class="media-metadata" dir="ltr">{move ||s.preview().map(|m|format!("{} × {} · {:.1}s{}",m.info.display_width,m.info.display_height,m.info.duration_seconds,if m.native {format!(" · {:.2} fps",m.info.frame_rate)}else{String::new()})).unwrap_or_default()}</span>
           </div>
-          <div class="compare" hidden=move || s.result.get().is_none() role="group" aria-label="Preview">
+          <div class="compare" hidden=move || s.result.get().is_none() role="group" aria-label=move || s.text("preview")>
             <button type="button" aria-pressed=move || (!s.show_result.get()).to_string() on:click=move |_|s.show_result.set(false)>{move ||s.text("original")}</button>
             <button type="button" aria-pressed=move || s.show_result.get().to_string() on:click=move |_|s.show_result.set(true)>{move ||s.text("result")}</button>
           </div>
         </main>
         <Show when=move || s.job.get().is_some()>
           <div class="job-strip" aria-live="polite">
-            <div class="job-label"><span>{move || s.job.get().map(|job|s.text(match job.status {JobStatus::Queued|JobStatus::Running=>"working",JobStatus::Completed=>"completed",JobStatus::Cancelled=>"cancelled",JobStatus::Failed=>"failed"})).unwrap_or("")}</span>
+            <div class="job-label"><span>{move || s.job.get().map(|job|s.text(match job.status {JobStatus::Queued|JobStatus::Running if s.reconnecting.get()=>"reconnecting",JobStatus::Queued|JobStatus::Running=>"working",JobStatus::Completed=>"completed",JobStatus::Cancelled=>"cancelled",JobStatus::Failed=>"failed"})).unwrap_or("")}</span>
               <b dir="ltr">{move ||s.job.get().map(|j|format!("{:.0}%",j.progress*100.)).unwrap_or_default()}</b></div>
             <div class="job-progress" role="progressbar" aria-label=move ||s.text("export") aria-valuemin="0" aria-valuemax="100" aria-valuenow=move ||s.job.get().map(|j|j.progress*100.).unwrap_or(0.)><span style:width=move ||s.job.get().map(|j|format!("{}%",j.progress*100.)).unwrap_or("0%".into())></span></div>
             <button type="button" hidden=move || !s.running() on:click=move |_|s.cancel()>{move ||s.text("cancel")}</button>
