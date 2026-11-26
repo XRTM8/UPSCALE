@@ -1,0 +1,2 @@
+-keep class com.xrtm8.upscale.** { *; }
+-dontwarn androidx.media3.**
