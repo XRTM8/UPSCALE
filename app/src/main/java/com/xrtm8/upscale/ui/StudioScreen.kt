@@ -1,4 +1,4 @@
-package com.xrtm8.upscale.ui
+﻿package com.xrtm8.upscale.ui
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
@@ -525,7 +525,7 @@ fun StudioScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 4.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF281216))
+                            .background(MaterialTheme.colorScheme.errorContainer)
                             .border(0.5.dp, StudioColors.Danger.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,

@@ -10,30 +10,33 @@
         android:fillColor="#1CE02447"
         android:pathData="M54,54m-22,0a22,22 0,1 1,44 0a22,22 0,1 1,-44 0" />
 
-    <!-- Spacious Precision Viewfinder Brackets (generous safe margin inside squircle) -->
+    <!-- Platinum White Precision Viewfinder Brackets -->
     <path
-        android:fillColor="#DCE0E8"
+        android:fillColor="#F5F6F8"
         android:pathData="M35,44.5 L35,37.5 C35,36.1 36.1,35 37.5,35 L44.5,35 L44.5,37.8 L37.8,37.8 L37.8,44.5 Z" />
     <path
-        android:fillColor="#FFFFFF"
+        android:fillColor="#F5F6F8"
         android:pathData="M63.5,35 L70.5,35 C71.9,35 73,36.1 73,37.5 L73,44.5 L70.2,44.5 L70.2,37.8 L63.5,37.8 Z" />
     <path
-        android:fillColor="#B2B6C2"
+        android:fillColor="#F5F6F8"
         android:pathData="M35,63.5 L37.8,63.5 L37.8,70.2 L44.5,70.2 L44.5,73 L37.5,73 C36.1,73 35,71.9 35,70.5 Z" />
     <path
-        android:fillColor="#DCE0E8"
+        android:fillColor="#F5F6F8"
         android:pathData="M70.2,63.5 L73,63.5 L73,70.5 C73,71.9 71.9,73 70.5,73 L63.5,73 L63.5,70.2 L70.2,70.2 Z" />
 
-    <!-- Clean Single Focal Mark: Velvet Crimson Precision Rise Arrow -->
+    <!-- Velvet Crimson Precision Rise Arrow -->
     <path
-        android:fillColor="#8C1230"
+        android:fillColor="#9C1030"
         android:pathData="M43.5,64.5 L62.5,45.5 L65,48 L46,67 Z" />
     <path
         android:fillColor="#E02447"
         android:pathData="M42.5,63 L59.5,46 L52.5,46 L52.5,42 L66,42 L66,55.5 L62,55.5 L62,48.5 L45,65.5 Z" />
 
-    <!-- Subtle Platinum Inner Step Dot -->
+    <!-- XRTM8 Signature Diamond Nuqta (Top Right) -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M64,42 L66,42 L66,44 L64,44 Z" />
+        android:pathData="M75,24 L80,29 L75,34 L70,29 Z" />
+    <path
+        android:fillColor="#FFB3C1"
+        android:pathData="M75,26.2 L77.8,29 L75,31.8 L72.2,29 Z" />
 </vector>

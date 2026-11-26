@@ -104,41 +104,21 @@ private fun studioTypography(isAmoledWhite: Boolean): Typography {
     val primary = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
     val secondary = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
     return Typography(
-        titleMedium = TextStyle(
-            fontFamily = StudioFontFamily,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 22.sp,
-            color = primary,
-        ),
-        bodyMedium = TextStyle(
-            fontFamily = StudioFontFamily,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Normal,
-            lineHeight = 20.sp,
-            color = primary,
-        ),
-        bodySmall = TextStyle(
-            fontFamily = StudioFontFamily,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Normal,
-            lineHeight = 17.sp,
-            color = secondary,
-        ),
-        labelMedium = TextStyle(
-            fontFamily = StudioFontFamily,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 16.sp,
-            color = primary,
-        ),
-        labelSmall = TextStyle(
-            fontFamily = StudioFontFamily,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp,
-            color = secondary,
-        ),
+        displayLarge = TextStyle(fontFamily = StudioFontFamily, fontSize = 36.sp, fontWeight = FontWeight.Bold, lineHeight = 46.sp, color = primary),
+        displayMedium = TextStyle(fontFamily = StudioFontFamily, fontSize = 30.sp, fontWeight = FontWeight.Bold, lineHeight = 40.sp, color = primary),
+        displaySmall = TextStyle(fontFamily = StudioFontFamily, fontSize = 26.sp, fontWeight = FontWeight.Bold, lineHeight = 34.sp, color = primary),
+        headlineLarge = TextStyle(fontFamily = StudioFontFamily, fontSize = 24.sp, fontWeight = FontWeight.Bold, lineHeight = 32.sp, color = primary),
+        headlineMedium = TextStyle(fontFamily = StudioFontFamily, fontSize = 20.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp, color = primary),
+        headlineSmall = TextStyle(fontFamily = StudioFontFamily, fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 25.sp, color = primary),
+        titleLarge = TextStyle(fontFamily = StudioFontFamily, fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp, color = primary),
+        titleMedium = TextStyle(fontFamily = StudioFontFamily, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp, color = primary),
+        titleSmall = TextStyle(fontFamily = StudioFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Medium, lineHeight = 20.sp, color = primary),
+        bodyLarge = TextStyle(fontFamily = StudioFontFamily, fontSize = 15.sp, fontWeight = FontWeight.Normal, lineHeight = 22.sp, color = primary),
+        bodyMedium = TextStyle(fontFamily = StudioFontFamily, fontSize = 14.sp, fontWeight = FontWeight.Normal, lineHeight = 20.sp, color = primary),
+        bodySmall = TextStyle(fontFamily = StudioFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Normal, lineHeight = 17.sp, color = secondary),
+        labelLarge = TextStyle(fontFamily = StudioFontFamily, fontSize = 13.sp, fontWeight = FontWeight.Medium, lineHeight = 18.sp, color = primary),
+        labelMedium = TextStyle(fontFamily = StudioFontFamily, fontSize = 12.sp, fontWeight = FontWeight.Medium, lineHeight = 16.sp, color = primary),
+        labelSmall = TextStyle(fontFamily = StudioFontFamily, fontSize = 11.sp, fontWeight = FontWeight.Medium, lineHeight = 14.sp, color = secondary),
     )
 }
 
