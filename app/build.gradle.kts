@@ -13,10 +13,19 @@ android {
         applicationId = "com.xrtm8.upscale"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4000
-        versionName = "0.4.0"
+        versionCode = 5000
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = true
+        }
     }
 
     buildTypes {
@@ -88,5 +97,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

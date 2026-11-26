@@ -4,8 +4,11 @@
 
 > أُرشف إصدار سطح المكتب السابق (Rust / Tauri `0.3.0`) في الفرع `legacy-tauri` والوسم `archive/tauri-v0.3`.
 
-## ما يقدمه الإصدار 0.4.0
+## ما يقدمه الإصدار 0.5.0
 
+- **تحديث تلقائي غير مزعج داخل التطبيق (`AppUpdater`):**
+  - فحص هادئ في الخلفية لآخر إصدار رسمي دون نوافذ منبثقة مزعجة.
+  - اختيار تلقائي للحزمة المناسبة للجهاز (`arm64-v8a` أو `universal`)، والتحقق من بصمة SHA-256 ومعرّف الحزمة (`com.xrtm8.upscale`) والشهادة الدائمة قبل التثبيت لمنع أي تضارب حزم.
 - **معاينة وتصدير بمحرك OpenGL ES فوري (`UpscaleGlEffect`):**
   - إزالة ضوضاء ذكية تحافظ على الحواف وملامح الوجه (`Denoise`).
   - تعزيز تفاصيل تكيفي يمنع الهالات المضيئة (`Detail CAS`).
@@ -29,10 +32,10 @@
 ./gradlew testDebugUnitTest lintDebug assembleRelease
 ```
 
-لتوقيع حزمة الإصدار والتحقق من الشهادة (`com.xrtm8.upscale`، `versionCode = 4000`):
+لتوقيع حزمتَي الإصدار (`arm64-v8a` و`universal`) والتحقق من الشهادة الدائمة (`com.xrtm8.upscale`، `versionCode = 5000`):
 
 ```powershell
-.\scripts\sign-release.ps1 -UnsignedApk app/build/outputs/apk/release/app-release-unsigned.apk
+.\scripts\sign-release.ps1
 ```
 
 ## الترخيص

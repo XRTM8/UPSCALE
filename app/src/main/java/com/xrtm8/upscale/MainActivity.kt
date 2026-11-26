@@ -17,6 +17,8 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
+import com.xrtm8.upscale.engine.AppUpdater
+import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.ui.StudioScreen
 import com.xrtm8.upscale.ui.StudioViewModel
 import com.xrtm8.upscale.ui.theme.UpscaleStudioTheme
@@ -50,6 +52,15 @@ class MainActivity : ComponentActivity() {
                 viewModel.startExport()
             }
 
+            val installPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartActivityForResult(),
+            ) {
+                val ready = viewModel.uiState.value.updateStatus as? UpdateStatus.ReadyToInstall
+                if (ready != null && AppUpdater.canRequestPackageInstalls(this)) {
+                    startActivity(AppUpdater.createInstallIntent(this, ready.apkFile))
+                }
+            }
+
             UpscaleStudioTheme {
                 StudioScreen(
                     state = state,
@@ -79,6 +90,19 @@ class MainActivity : ComponentActivity() {
                     onCancelExport = viewModel::cancelExport,
                     onShareOutput = viewModel::shareCompletedOutput,
                     onDismissError = viewModel::dismissError,
+                    onCheckUpdate = { viewModel.checkForUpdates(manual = true) },
+                    onStartUpdateDownload = viewModel::startUpdateDownload,
+                    onInstallUpdate = {
+                        val ready = state.updateStatus as? UpdateStatus.ReadyToInstall
+                        if (ready != null) {
+                            if (AppUpdater.canRequestPackageInstalls(this)) {
+                                startActivity(AppUpdater.createInstallIntent(this, ready.apkFile))
+                            } else {
+                                installPermissionLauncher.launch(AppUpdater.createUnknownSourcesSettingsIntent(this))
+                            }
+                        }
+                    },
+                    onDismissUpdateBanner = viewModel::dismissUpdateBanner,
                 )
             }
         }

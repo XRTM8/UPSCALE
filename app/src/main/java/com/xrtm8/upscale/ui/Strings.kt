@@ -52,6 +52,13 @@ data class StudioStrings(
     val close: String,
     val savedToGallery: String,
     val preparing: String,
+    val updateAvailable: String,
+    val updateNow: String,
+    val downloadingUpdate: String,
+    val installUpdate: String,
+    val updateReady: String,
+    val checkingUpdate: String,
+    val upToDate: String,
 )
 
 fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLanguage.AR) {
@@ -105,6 +112,13 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         close = "إغلاق",
         savedToGallery = "حُفظ في Movies/UPSCALE",
         preparing = "جارٍ التحضير…",
+        updateAvailable = "تحديث جديد متاح",
+        updateNow = "تحديث",
+        downloadingUpdate = "جارٍ تنزيل التحديث",
+        installUpdate = "تثبيت",
+        updateReady = "التحديث جاهز وموثّق",
+        checkingUpdate = "جارٍ فحص التحديثات…",
+        upToDate = "لديك أحدث إصدار",
     )
 } else {
     StudioStrings(
@@ -157,5 +171,12 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         close = "Close",
         savedToGallery = "Saved to Movies/UPSCALE",
         preparing = "Preparing…",
+        updateAvailable = "Update available",
+        updateNow = "Update",
+        downloadingUpdate = "Downloading update",
+        installUpdate = "Install",
+        updateReady = "Verified update ready",
+        checkingUpdate = "Checking for updates…",
+        upToDate = "You're on the latest version",
     )
 }

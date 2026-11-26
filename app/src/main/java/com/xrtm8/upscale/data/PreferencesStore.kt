@@ -22,6 +22,18 @@ class PreferencesStore(context: Context) {
         prefs.edit().putString("language", language.code).apply()
     }
 
+    fun lastUpdateCheckMs(): Long = prefs.getLong("lastUpdateCheckMs", 0L)
+
+    fun saveLastUpdateCheckMs(timestampMs: Long) {
+        prefs.edit().putLong("lastUpdateCheckMs", timestampMs).apply()
+    }
+
+    fun dismissedUpdateVersionCode(): Long = prefs.getLong("dismissedUpdateVersionCode", 0L)
+
+    fun saveDismissedUpdateVersionCode(versionCode: Long) {
+        prefs.edit().putLong("dismissedUpdateVersionCode", versionCode).apply()
+    }
+
     fun loadOptions(): ExportOptions = ExportOptions(
         platform = enumValueOrDefault(prefs.getString("platform", null), PlatformPreset.INSTAGRAM),
         postFormat = enumValueOrDefault(prefs.getString("postFormat", null), PostFormat.REEL),

@@ -7,10 +7,12 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xrtm8.upscale.data.PreferencesStore
+import com.xrtm8.upscale.engine.AppUpdater
 import com.xrtm8.upscale.engine.ExportForegroundService
 import com.xrtm8.upscale.engine.ExportRepository
 import com.xrtm8.upscale.engine.LiveShaderParams
 import com.xrtm8.upscale.engine.MediaInspector
+import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.ExportOptions
@@ -46,6 +48,8 @@ data class StudioUiState(
     val showResultPreview: Boolean = false,
     val isImporting: Boolean = false,
     val errorMessage: String? = null,
+    val updateStatus: UpdateStatus = UpdateStatus.Idle,
+    val updateBannerVisible: Boolean = false,
 ) {
     val isExportRunning: Boolean
         get() = exportState is ExportState.Preparing || exportState is ExportState.Running
@@ -95,6 +99,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 ExportRepository.cleanupStaleCache(application)
+                AppUpdater.cleanupUpdateCache(application)
                 MediaInspector.inspectDeviceCapabilities(application)
             }.let { caps ->
                 _uiState.update { state ->
@@ -102,6 +107,12 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     syncShaderParams(normalized, state.splitCompareEnabled, state.splitPosition, state.showResultPreview)
                     state.copy(capabilities = caps, options = normalized)
                 }
+            }
+            // Quiet, non-intrusive background update check at most once every 6 hours.
+            kotlinx.coroutines.delay(1_500L)
+            val elapsed = System.currentTimeMillis() - prefs.lastUpdateCheckMs()
+            if (elapsed >= 6L * 3600L * 1000L) {
+                checkForUpdates(manual = false)
             }
         }
 
@@ -140,6 +151,94 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     fun dismissError() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun checkForUpdates(manual: Boolean = true) {
+        val current = _uiState.value.updateStatus
+        if (current is UpdateStatus.Checking || current is UpdateStatus.Downloading) return
+        if (manual) {
+            _uiState.update { it.copy(updateStatus = UpdateStatus.Checking, updateBannerVisible = true) }
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                AppUpdater.checkLatestRelease()
+            }
+            prefs.saveLastUpdateCheckMs(System.currentTimeMillis())
+            result.onSuccess { info ->
+                if (info == null) {
+                    _uiState.update {
+                        it.copy(
+                            updateStatus = if (manual) UpdateStatus.UpToDate else UpdateStatus.Idle,
+                            updateBannerVisible = manual,
+                        )
+                    }
+                } else {
+                    val dismissed = prefs.dismissedUpdateVersionCode() == info.versionCode
+                    _uiState.update {
+                        it.copy(
+                            updateStatus = UpdateStatus.Available(info),
+                            updateBannerVisible = manual || !dismissed,
+                        )
+                    }
+                }
+            }.onFailure { error ->
+                if (manual) {
+                    _uiState.update {
+                        it.copy(
+                            updateStatus = UpdateStatus.Error(error.message ?: "Update check failed."),
+                            updateBannerVisible = true,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun startUpdateDownload() {
+        val available = _uiState.value.updateStatus as? UpdateStatus.Available ?: return
+        val app = getApplication<Application>()
+        _uiState.update {
+            it.copy(
+                updateStatus = UpdateStatus.Downloading(available.info, 0f),
+                updateBannerVisible = true,
+            )
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                AppUpdater.downloadAndVerify(app, available.info) { progress ->
+                    _uiState.update { state ->
+                        if (state.updateStatus is UpdateStatus.Downloading) {
+                            state.copy(updateStatus = UpdateStatus.Downloading(available.info, progress))
+                        } else {
+                            state
+                        }
+                    }
+                }
+            }
+            result.onSuccess { apkFile ->
+                _uiState.update {
+                    it.copy(
+                        updateStatus = UpdateStatus.ReadyToInstall(available.info, apkFile),
+                        updateBannerVisible = true,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        updateStatus = UpdateStatus.Error(error.message ?: "Update verification failed."),
+                        updateBannerVisible = true,
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissUpdateBanner() {
+        val current = _uiState.value.updateStatus
+        if (current is UpdateStatus.Available) {
+            prefs.saveDismissedUpdateVersionCode(current.info.versionCode)
+        }
+        _uiState.update { it.copy(updateBannerVisible = false) }
     }
 
     fun toggleSplitCompare() {

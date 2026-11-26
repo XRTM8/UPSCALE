@@ -24,11 +24,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Unit tests and lint
         run: ./gradlew testDebugUnitTest lintDebug --no-daemon
-      - name: Build release APK
+      - name: Build arm64-v8a and universal APKs
         run: ./gradlew assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: upscale-android-unsigned
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          name: upscale-android-release-input
+          path: |
+            app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+            app/build/outputs/apk/release/app-universal-release-unsigned.apk
           if-no-files-found: error
           retention-days: 14

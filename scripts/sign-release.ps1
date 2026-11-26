@@ -1,13 +1,13 @@
 param(
-    [Parameter(Mandatory)][string] $UnsignedApk,
+    [string] $ApkDirectory = 'app/build/outputs/apk/release',
     [string] $AndroidSdk = $env:ANDROID_HOME,
     [string] $OutputDirectory = 'release'
 )
 
 $ErrorActionPreference = 'Stop'
-$apkSource = (Resolve-Path -LiteralPath $UnsignedApk).Path
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
+$apkDir = (Resolve-Path -LiteralPath $ApkDirectory).Path
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 
 $gradleKts = Get-Content -Raw -LiteralPath 'app/build.gradle.kts'
@@ -59,66 +59,72 @@ function Unprotect-Password([string] $name) {
 
 $releaseDir = Join-Path $output "v$version"
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-$aligned = Join-Path $releaseDir 'app-aligned.tmp.apk'
-$signedApk = Join-Path $releaseDir "UPSCALE-Studio-$version-android.apk"
 
+$variants = @(
+    @{ Name = 'arm64-v8a'; Input = 'app-arm64-v8a-release-unsigned.apk'; ExpectedAbis = @('arm64-v8a') },
+    @{ Name = 'universal'; Input = 'app-universal-release-unsigned.apk'; ExpectedAbis = @('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64') }
+)
+
+$signedFiles = @()
 try {
     $env:UPSCALE_ANDROID_SIGNING_PASSWORD = Unprotect-Password 'android-release.dpapi'
-    & $zipalign -P 16 -f 4 $apkSource $aligned
-    if ($LASTEXITCODE -ne 0) { throw 'APK zipalign failed.' }
-
-    & $apksigner sign `
-        --ks $androidKey `
-        --ks-key-alias upscale `
-        --ks-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD `
-        --key-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD `
-        --v4-signing-enabled false `
-        --out $signedApk `
-        $aligned
-    if ($LASTEXITCODE -ne 0) { throw 'APK signing failed.' }
-    Remove-Item -LiteralPath $aligned
-
-    & $zipalign -c -P 16 4 $signedApk
-    if ($LASTEXITCODE -ne 0) { throw 'APK alignment verification failed.' }
-
-    $verified = & $apksigner verify --min-sdk-version 29 --verbose --print-certs $signedApk
-    $reportedCertificates = @(
-        $verified | Select-String -Pattern 'certificate SHA-256 digest: ([a-fA-F0-9]{64})$' |
-            ForEach-Object { $_.Matches[0].Groups[1].Value.ToLowerInvariant() } |
-            Sort-Object -Unique
-    )
-    if ($LASTEXITCODE -ne 0 -or $reportedCertificates.Count -ne 1 -or $reportedCertificates[0] -cne $certificate) {
-        throw 'APK certificate digest verification failed.'
-    }
-    if (!($verified -match '^Verified using v[23] scheme .*: true$') -or !($verified -match '^Number of signers: 1$')) {
-        throw 'Invalid APK signing scheme.'
-    }
-
-    $badging = & $aapt dump badging $signedApk
-    if ($LASTEXITCODE -ne 0 -or !($badging -match "^package: name='$([regex]::Escape($package))' versionCode='$versionCode' versionName='$([regex]::Escape($version))'")) {
-        throw 'APK package/version verification failed.'
-    }
-
-    $utf8NoBom = [Text.UTF8Encoding]::new($false)
-    $manifest = Join-Path $releaseDir 'latest.json'
-    $manifestJson = @{
-        version = $version
-        android = @{
-            package = $package
-            versionCode = $versionCode
-            certificateSha256 = $certificate
-            url = "https://github.com/XRTM8/UPSCALE/releases/download/v$version/$([IO.Path]::GetFileName($signedApk))"
+    foreach ($variant in $variants) {
+        $unsignedPath = Join-Path $apkDir $variant.Input
+        if (!(Test-Path -LiteralPath $unsignedPath -PathType Leaf)) {
+            throw "Missing unsigned APK: $unsignedPath"
         }
-    } | ConvertTo-Json -Depth 4
-    [IO.File]::WriteAllText($manifest, $manifestJson + "`n", $utf8NoBom)
+        $aligned = Join-Path $releaseDir "$($variant.Name)-aligned.tmp.apk"
+        $signedApk = Join-Path $releaseDir "UPSCALE-Studio-$version-android-$($variant.Name).apk"
 
-    $sums = @($signedApk, $manifest) | ForEach-Object {
-        $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
-        "$hash  $([IO.Path]::GetFileName($_))"
+        & $zipalign -P 16 -f 4 $unsignedPath $aligned
+        if ($LASTEXITCODE -ne 0) { throw "APK zipalign failed for $($variant.Name)." }
+
+        & $apksigner sign `
+            --ks $androidKey `
+            --ks-key-alias upscale `
+            --ks-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD `
+            --key-pass env:UPSCALE_ANDROID_SIGNING_PASSWORD `
+            --v4-signing-enabled false `
+            --out $signedApk `
+            $aligned
+        if ($LASTEXITCODE -ne 0) { throw "APK signing failed for $($variant.Name)." }
+        Remove-Item -LiteralPath $aligned
+
+        & $zipalign -c -P 16 4 $signedApk
+        if ($LASTEXITCODE -ne 0) { throw "APK alignment check failed for $($variant.Name)." }
+
+        $verified = & $apksigner verify --min-sdk-version 29 --verbose --print-certs $signedApk
+        $reportedCertificates = @(
+            $verified | Select-String -Pattern 'certificate SHA-256 digest: ([a-fA-F0-9]{64})$' |
+                ForEach-Object { $_.Matches[0].Groups[1].Value.ToLowerInvariant() } |
+                Sort-Object -Unique
+        )
+        if ($LASTEXITCODE -ne 0 -or $reportedCertificates.Count -ne 1 -or $reportedCertificates[0] -cne $certificate) {
+            throw "APK certificate verification failed for $($variant.Name)."
+        }
+        if (!($verified -match '^Verified using v[23] scheme .*: true$') -or !($verified -match '^Number of signers: 1$')) {
+            throw "Invalid APK signing scheme for $($variant.Name)."
+        }
+
+        $badging = & $aapt dump badging $signedApk
+        if ($LASTEXITCODE -ne 0 -or !($badging -match "^package: name='$([regex]::Escape($package))' versionCode='$versionCode' versionName='$([regex]::Escape($version))'")) {
+            throw "APK identity or version mismatch for $($variant.Name)."
+        }
+
+        $actualAbis = @(
+            tar -tf $signedApk |
+                Where-Object { $_ -match '^lib/([^/]+)/[^/]+\.so$' } |
+                ForEach-Object { ($_ -split '/')[1] } |
+                Sort-Object -Unique
+        )
+        if ($LASTEXITCODE -ne 0) { throw "Failed to inspect ABIs in $($variant.Name)." }
+        if (Compare-Object $variant.ExpectedAbis $actualAbis) {
+            throw "ABI mismatch for $($variant.Name). Expected: $($variant.ExpectedAbis -join ', '); Actual: $($actualAbis -join ', ')"
+        }
+
+        Write-Output "Verified $($variant.Name) APK: $signedApk ($package v$version / $versionCode)"
+        $signedFiles += $signedApk
     }
-    [IO.File]::WriteAllText((Join-Path $releaseDir 'SHA256SUMS.txt'), ($sums -join "`n") + "`n", $utf8NoBom)
-
-    Write-Output "Signed and verified $signedApk ($package v$version / $versionCode)"
 } finally {
     Remove-Item Env:UPSCALE_ANDROID_SIGNING_PASSWORD -ErrorAction SilentlyContinue
 }

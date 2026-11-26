@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,7 +49,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xrtm8.upscale.BuildConfig
 import com.xrtm8.upscale.engine.LiveShaderParams
+import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportState
@@ -76,6 +80,10 @@ fun StudioScreen(
     onCancelExport: () -> Unit,
     onShareOutput: () -> Unit,
     onDismissError: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onStartUpdateDownload: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onDismissUpdateBanner: () -> Unit,
 ) {
     val strings = stringsFor(state.language)
     val layoutDirection = if (state.language.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
@@ -133,18 +141,63 @@ fun StudioScreen(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, StudioColors.Hairline, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onToggleLanguage)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        text = if (state.language == AppLanguage.AR) "EN" else "عربي",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    val hasReadyUpdate = state.updateStatus is UpdateStatus.Available ||
+                        state.updateStatus is UpdateStatus.ReadyToInstall
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(
+                                1.dp,
+                                if (hasReadyUpdate) StudioColors.Success.copy(alpha = 0.45f) else StudioColors.Hairline,
+                                RoundedCornerShape(8.dp),
+                            )
+                            .clickable(onClick = onCheckUpdate)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        if (hasReadyUpdate) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(StudioColors.Success),
+                            )
+                        }
+                        Text(
+                            text = "v${BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (hasReadyUpdate) StudioColors.TextPrimary else StudioColors.TextSecondary,
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, StudioColors.Hairline, RoundedCornerShape(8.dp))
+                            .clickable(onClick = onToggleLanguage)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            text = if (state.language == AppLanguage.AR) "EN" else "عربي",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
                 }
+            }
+
+            if (state.updateBannerVisible) {
+                UpdateNoticeStrip(
+                    status = state.updateStatus,
+                    strings = strings,
+                    onDownload = onStartUpdateDownload,
+                    onInstall = onInstallUpdate,
+                    onDismiss = onDismissUpdateBanner,
+                )
             }
 
             // Main stage
@@ -600,6 +653,123 @@ private fun ExportStatusStrip(
                 )
             }
             ExportState.Idle -> {}
+        }
+    }
+}
+
+@Composable
+private fun UpdateNoticeStrip(
+    status: UpdateStatus,
+    strings: StudioStrings,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (status is UpdateStatus.Idle) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF161A20))
+            .border(0.5.dp, StudioColors.Hairline)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.SystemUpdateAlt,
+                    contentDescription = null,
+                    tint = if (status is UpdateStatus.Error) StudioColors.Danger else StudioColors.Success,
+                    modifier = Modifier.size(15.dp),
+                )
+                val label = when (status) {
+                    UpdateStatus.Checking -> strings.checkingUpdate
+                    UpdateStatus.UpToDate -> strings.upToDate
+                    is UpdateStatus.Available -> "${strings.updateAvailable} · v${status.info.versionName}"
+                    is UpdateStatus.Downloading -> "${strings.downloadingUpdate} · ${(status.progress * 100f).roundToInt()}%"
+                    is UpdateStatus.ReadyToInstall -> "${strings.updateReady} · v${status.info.versionName}"
+                    is UpdateStatus.Error -> status.message
+                    UpdateStatus.Idle -> ""
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = StudioColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                when (status) {
+                    is UpdateStatus.Available -> {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(StudioColors.PrimaryFill)
+                                .clickable(onClick = onDownload)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = strings.updateNow,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = StudioColors.PrimaryOnFill,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    is UpdateStatus.ReadyToInstall -> {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(StudioColors.Success)
+                                .clickable(onClick = onInstall)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = strings.installUpdate,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF0C0E11),
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    else -> {}
+                }
+
+                if (status !is UpdateStatus.Downloading) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = strings.close,
+                            tint = StudioColors.TextSecondary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        if (status is UpdateStatus.Downloading) {
+            LinearProgressIndicator(
+                progress = { status.progress.coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp),
+                color = StudioColors.Success,
+                trackColor = Color(0xFF2B313C),
+            )
         }
     }
 }
