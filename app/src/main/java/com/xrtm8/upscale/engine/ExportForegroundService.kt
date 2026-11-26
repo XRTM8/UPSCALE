@@ -47,6 +47,7 @@ class ExportForegroundService : Service() {
     private var currentJobId: String = ""
     private var currentOutputName: String = ""
     private var currentDurationMs: Long = 1L
+    private var currentStartedAtMs: Long = 0L
 
     private val progressPoller = object : Runnable {
         override fun run() {
@@ -62,6 +63,7 @@ class ExportForegroundService : Service() {
                         processedMs = (currentDurationMs * pct).toLong(),
                         totalMs = currentDurationMs,
                         outputName = currentOutputName,
+                        startedAtMs = currentStartedAtMs,
                     ),
                 )
                 updateNotification((pct * 100).toInt(), currentOutputName)
@@ -102,6 +104,7 @@ class ExportForegroundService : Service() {
         currentJobId = jobId
         currentOutputName = outputName
         currentDurationMs = request.plan.effectiveDurationMs.coerceAtLeast(1L)
+        currentStartedAtMs = System.currentTimeMillis()
 
         val notification = buildNotification(progressPercent = 0, outputName = outputName)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -120,6 +123,7 @@ class ExportForegroundService : Service() {
                 processedMs = 0L,
                 totalMs = currentDurationMs,
                 outputName = outputName,
+                startedAtMs = currentStartedAtMs,
             ),
         )
 
@@ -156,6 +160,7 @@ class ExportForegroundService : Service() {
                             processedMs = currentDurationMs,
                             totalMs = currentDurationMs,
                             outputName = outputName,
+                            startedAtMs = currentStartedAtMs,
                         ),
                     )
                     updateNotification(98, outputName)

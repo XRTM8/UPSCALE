@@ -5,7 +5,10 @@ import android.view.ViewGroup
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,14 +24,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.CompareArrows
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -41,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +59,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +68,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -72,6 +81,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.xrtm8.upscale.engine.LiveShaderParams
+import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.VideoEffectsFactory
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlanCalculator
@@ -95,20 +105,28 @@ fun VideoPreviewStage(
     splitCompareEnabled: Boolean,
     splitPosition: Float,
     showSafeZones: Boolean,
+    previewZoom: Float,
     showResultPreview: Boolean,
     isLocked: Boolean,
+    recentExport: RecentExportItem?,
     strings: StudioStrings,
     onPickVideo: () -> Unit,
+    onSelectQuickFormat: (PostFormat) -> Unit,
     onSplitPositionChange: (Float) -> Unit,
     onCropOffsetChange: (Float, Float) -> Unit,
+    onZoomChange: (Float) -> Unit,
+    onOpenRecent: (RecentExportItem) -> Unit,
+    onShareRecent: (RecentExportItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val isAmoledWhite = LocalAmoledWhite.current
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
     val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
     val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val cardBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
     val cardBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
 
     val targetRatio = options.postFormat.ratioWidth.toFloat() / options.postFormat.ratioHeight.toFloat()
@@ -137,6 +155,15 @@ fun VideoPreviewStage(
     var isPlaying by remember { mutableStateOf(false) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var zoomPanX by remember(previewUri) { mutableFloatStateOf(0f) }
+    var zoomPanY by remember(previewUri) { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(previewZoom) {
+        if (previewZoom <= 1.01f) {
+            zoomPanX = 0f
+            zoomPanY = 0f
+        }
+    }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -198,92 +225,194 @@ fun VideoPreviewStage(
         contentAlignment = Alignment.Center,
     ) {
         if (previewUri == null) {
-            // Athar HomeHeroCard-inspired obsidian + velvet burgundy hero frame
             val heroGrad = if (isAmoledWhite) {
                 Brush.verticalGradient(listOf(StudioColors.WhiteSurface, StudioColors.WhiteSurfaceElevated))
             } else {
                 Brush.verticalGradient(listOf(StudioColors.BurgundyGlow, StudioColors.StudioSurface))
             }
             val heroBorder = if (isAmoledWhite) {
-                Brush.horizontalGradient(listOf(accent.copy(alpha = 0.45f), StudioColors.WhiteBorder))
+                Brush.horizontalGradient(listOf(accentFill.copy(alpha = 0.45f), StudioColors.WhiteBorder))
             } else {
-                Brush.horizontalGradient(listOf(accent.copy(alpha = 0.7f), Color(0x33E02447)))
+                Brush.horizontalGradient(listOf(accentFill.copy(alpha = 0.7f), Color(0x33E02447)))
             }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(heroGrad)
-                    .border(1.dp, heroBorder, RoundedCornerShape(22.dp))
-                    .padding(22.dp),
-                contentAlignment = Alignment.Center,
+            Column(
+                modifier = Modifier.fillMaxWidth(0.94f),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(heroGrad)
+                        .border(1.dp, heroBorder, RoundedCornerShape(22.dp))
+                        .padding(20.dp),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(accent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Add,
-                            contentDescription = null,
-                            tint = StudioColors.PureWhite,
-                            modifier = Modifier.size(26.dp),
-                        )
-                    }
-
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = strings.heroTitle,
-                            color = primaryText,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                        )
-                        Text(
-                            text = strings.heroSubtitle,
-                            color = secondaryText,
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(accentFill),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Add,
+                                contentDescription = null,
+                                tint = StudioColors.PureWhite,
+                                modifier = Modifier.size(25.dp),
+                            )
+                        }
 
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onPickVideo()
-                        },
-                        enabled = !isLocked,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accent,
-                            contentColor = StudioColors.PureWhite,
-                        ),
-                        shape = RoundedCornerShape(12.dp),
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = strings.heroTitle,
+                                color = primaryText,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                            )
+                            Text(
+                                text = strings.heroSubtitle,
+                                color = secondaryText,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+
+                        // Quick aspect/format selector inside Hero Card (no dead space, single action flow)
+                        val quickFormats = ExportOptions.allowedFormats(options.platform)
+                            .filter { it != PostFormat.STORY }
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            quickFormats.forEach { format ->
+                                val selected = options.postFormat == format
+                                val label = when (format) {
+                                    PostFormat.REEL -> "${strings.reel} · \u20669:16\u2069"
+                                    PostFormat.FEED -> "${strings.feed} · \u20664:5\u2069"
+                                    PostFormat.LANDSCAPE -> "${strings.landscape}"
+                                    PostFormat.STORY -> strings.story
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (selected) accentFill else if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioBackground,
+                                        )
+                                        .border(
+                                            0.5.dp,
+                                            if (selected) accentFill else cardBorder,
+                                            RoundedCornerShape(10.dp),
+                                        )
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSelectQuickFormat(format)
+                                        }
+                                        .padding(horizontal = 11.dp, vertical = 7.dp),
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (selected) StudioColors.PureWhite else primaryText,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onPickVideo()
+                            },
+                            enabled = !isLocked,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = accentFill,
+                                contentColor = StudioColors.PureWhite,
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                        ) {
+                            Text(
+                                text = strings.chooseVideo,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = StudioColors.PureWhite,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+
+                // Real latest exported video from Movies/UPSCALE (zero fake projects)
+                if (recentExport != null) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp),
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(cardBg)
+                            .border(0.5.dp, cardBorder, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(
-                            text = strings.chooseVideo,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = StudioColors.PureWhite,
-                            modifier = Modifier.size(16.dp),
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = strings.latestExport,
+                                color = accentText,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "${recentExport.name} · \u2066${recentExport.width}×${recentExport.height}\u2069 · \u2066${formatSizeMb(recentExport.sizeBytes)}\u2069",
+                                color = secondaryText,
+                                fontSize = 11.5.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            IconButton(
+                                onClick = { onOpenRecent(recentExport) },
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.OpenInNew,
+                                    contentDescription = strings.openInGallery,
+                                    tint = primaryText,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                            IconButton(
+                                onClick = { onShareRecent(recentExport) },
+                                modifier = Modifier.size(34.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = strings.shareVideo,
+                                    tint = accentText,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -307,6 +436,7 @@ fun VideoPreviewStage(
                         .border(0.8.dp, if (splitCompareEnabled) StudioColors.BurgundyBorderActive else cardBorder, RoundedCornerShape(16.dp)),
                 ) {
                     val stageWidthPx = with(LocalDensity.current) { maxWidth.toPx() }.coerceAtLeast(1f)
+                    val stageHeightPx = with(LocalDensity.current) { maxHeight.toPx() }.coerceAtLeast(1f)
                     val layoutDirection = LocalLayoutDirection.current
 
                     AndroidView(
@@ -323,10 +453,38 @@ fun VideoPreviewStage(
                         update = { view ->
                             view.resizeMode = resizeMode
                         },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = previewZoom,
+                                scaleY = previewZoom,
+                                translationX = zoomPanX,
+                                translationY = zoomPanY,
+                            ),
                     )
 
-                    if (!showResultPreview && options.framing == FramingMode.COVER && !isLocked) {
+                    // Zoom & Pan when zoomed > 1x, or 2-finger pinch anytime
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(previewZoom, stageWidthPx, stageHeightPx) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    val nextZoom = (previewZoom * zoom).coerceIn(1f, 3f)
+                                    if (nextZoom != previewZoom) {
+                                        onZoomChange(nextZoom)
+                                    }
+                                    if (nextZoom > 1.02f) {
+                                        val maxPanX = stageWidthPx * (nextZoom - 1f) * 0.5f
+                                        val maxPanY = stageHeightPx * (nextZoom - 1f) * 0.5f
+                                        zoomPanX = (zoomPanX + pan.x).coerceIn(-maxPanX, maxPanX)
+                                        zoomPanY = (zoomPanY + pan.y).coerceIn(-maxPanY, maxPanY)
+                                    }
+                                }
+                            },
+                    )
+
+                    // 1-finger drag to adjust Cover crop framing when not zoomed
+                    if (!showResultPreview && options.framing == FramingMode.COVER && !isLocked && previewZoom <= 1.05f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -343,6 +501,16 @@ fun VideoPreviewStage(
                                     }
                                 },
                         )
+
+                        if (options.cropOffsetX == 0f && options.cropOffsetY == 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 12.dp),
+                            ) {
+                                OverlayPill(strings.dragCropHint)
+                            }
+                        }
                     }
 
                     if (showSafeZones) {
@@ -420,7 +588,7 @@ fun VideoPreviewStage(
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = null,
-                            tint = accent,
+                            tint = accentText,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -433,8 +601,8 @@ fun VideoPreviewStage(
                             exoPlayer.seekTo(seekMs)
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = accent,
-                            activeTrackColor = accent,
+                            thumbColor = accentFill,
+                            activeTrackColor = accentFill,
                             inactiveTrackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
                         ),
                         modifier = Modifier.weight(1f),
@@ -494,4 +662,9 @@ fun formatMs(ms: Long): String {
     val min = totalSec / 60L
     val sec = totalSec % 60L
     return "%d:%02d".format(min, sec)
+}
+
+fun formatSizeMb(bytes: Long): String {
+    val mb = (bytes / (1024.0 * 1024.0)).coerceAtLeast(0.1)
+    return "%.1f MB".format(mb)
 }

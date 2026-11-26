@@ -114,4 +114,13 @@ class ExportPlanCalculatorTest {
         val result = ExportPlanCalculator.buildPlan(sampleVideo(), ExportOptions(), lowStorage)
         assertTrue(result.isFailure)
     }
+
+    @Test
+    fun estimatesRemainingSecondsOnlyAfterProgressStarts() {
+        val early = com.xrtm8.upscale.model.ExportState.Running("job", 0.02f, 200L, 10_000L, "out.mp4", 1_000L)
+        assertNull(early.estimatedRemainingSeconds(2_000L))
+
+        val mid = com.xrtm8.upscale.model.ExportState.Running("job", 0.5f, 5_000L, 10_000L, "out.mp4", 1_000L)
+        assertEquals(10L, mid.estimatedRemainingSeconds(11_000L))
+    }
 }

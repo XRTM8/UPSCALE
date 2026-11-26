@@ -56,7 +56,8 @@ fun StudioSlider(
     val subtleIcon = if (isAmoledWhite) StudioColors.DarkTextSubtle else StudioColors.SubtleGray
     val surfaceColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurface
     val borderColor = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
-    val accentColor = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentTrack = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -69,7 +70,7 @@ fun StudioSlider(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = accentColor,
+                        tint = accentText,
                         modifier = Modifier.size(15.dp),
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -112,7 +113,7 @@ fun StudioSlider(
 
                 Text(
                     text = "${(value * 100f).roundToInt()}%",
-                    color = accentColor,
+                    color = accentText,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -143,8 +144,8 @@ fun StudioSlider(
             value = value,
             onValueChange = onValueChange,
             colors = SliderDefaults.colors(
-                thumbColor = accentColor,
-                activeTrackColor = accentColor,
+                thumbColor = accentTrack,
+                activeTrackColor = accentTrack,
                 inactiveTrackColor = surfaceColor,
             ),
             modifier = Modifier

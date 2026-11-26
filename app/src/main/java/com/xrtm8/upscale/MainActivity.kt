@@ -86,8 +86,11 @@ class MainActivity : ComponentActivity() {
                     onToggleSplitCompare = viewModel::toggleSplitCompare,
                     onSplitPositionChange = viewModel::updateSplitPosition,
                     onToggleSafeZones = viewModel::toggleSafeZones,
+                    onToggleZoom = viewModel::toggleZoom,
+                    onZoomChange = viewModel::updateZoom,
                     onSetShowResult = viewModel::setShowResultPreview,
                     onUpdateOptions = viewModel::updateOptions,
+                    onResetFilters = viewModel::resetEnhancementDefaults,
                     onStartExport = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -98,7 +101,10 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onCancelExport = viewModel::cancelExport,
+                    onOpenOutput = viewModel::openCompletedOutput,
                     onShareOutput = viewModel::shareCompletedOutput,
+                    onOpenRecent = { item -> viewModel.openVideoUri(item.uriString) },
+                    onShareRecent = { item -> viewModel.shareVideoUri(item.uriString, item.name) },
                     onDismissError = viewModel::dismissError,
                     onCheckUpdate = { viewModel.checkForUpdates(manual = true) },
                     onStartUpdateDownload = viewModel::startUpdateDownload,

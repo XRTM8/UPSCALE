@@ -162,7 +162,15 @@ sealed interface ExportState {
         val processedMs: Long,
         val totalMs: Long,
         val outputName: String,
-    ) : ExportState
+        val startedAtMs: Long = 0L,
+    ) : ExportState {
+        fun estimatedRemainingSeconds(nowMs: Long): Long? {
+            if (startedAtMs <= 0L || progress < 0.05f || progress >= 0.99f) return null
+            val elapsedMs = (nowMs - startedAtMs).coerceAtLeast(500L)
+            val remainingMs = ((elapsedMs / progress.toDouble()) * (1.0 - progress.toDouble())).toLong()
+            return (remainingMs / 1000L).coerceAtLeast(1L)
+        }
+    }
 
     data class Completed(
         val jobId: String,

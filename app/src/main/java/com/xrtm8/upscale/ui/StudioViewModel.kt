@@ -12,6 +12,7 @@ import com.xrtm8.upscale.engine.ExportForegroundService
 import com.xrtm8.upscale.engine.ExportRepository
 import com.xrtm8.upscale.engine.LiveShaderParams
 import com.xrtm8.upscale.engine.MediaInspector
+import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
 import com.xrtm8.upscale.model.DeviceCapabilities
@@ -46,9 +47,11 @@ data class StudioUiState(
     val splitCompareEnabled: Boolean = false,
     val splitPosition: Float = 0.5f,
     val showSafeZones: Boolean = false,
+    val previewZoom: Float = 1f,
     val showResultPreview: Boolean = false,
     val isImporting: Boolean = false,
     val errorMessage: String? = null,
+    val recentExport: RecentExportItem? = null,
     val updateStatus: UpdateStatus = UpdateStatus.Idle,
     val updateBannerVisible: Boolean = false,
 ) {
@@ -102,12 +105,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             withContext(Dispatchers.IO) {
                 ExportRepository.cleanupStaleCache(application)
                 AppUpdater.cleanupUpdateCache(application)
-                MediaInspector.inspectDeviceCapabilities(application)
-            }.let { caps ->
+                val caps = MediaInspector.inspectDeviceCapabilities(application)
+                val latest = MediaInspector.queryLatestExport(application)
+                caps to latest
+            }.let { (caps, latest) ->
                 _uiState.update { state ->
                     val normalized = state.options.normalizedForPlatform(caps)
                     syncShaderParams(normalized, state.splitCompareEnabled, state.splitPosition, state.showResultPreview)
-                    state.copy(capabilities = caps, options = normalized)
+                    state.copy(capabilities = caps, options = normalized, recentExport = latest)
                 }
             }
             // Quiet, non-intrusive background update check at most once every 6 hours.
@@ -120,6 +125,11 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             ExportRepository.state.collect { nextExportState ->
+                val latestExport = if (nextExportState is ExportState.Completed) {
+                    withContext(Dispatchers.IO) { MediaInspector.queryLatestExport(application) }
+                } else {
+                    _uiState.value.recentExport
+                }
                 _uiState.update { state ->
                     val autoShowResult = nextExportState is ExportState.Completed &&
                         state.exportState !is ExportState.Completed
@@ -127,6 +137,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     val next = state.copy(
                         exportState = nextExportState,
                         showResultPreview = showResult,
+                        recentExport = latestExport,
                     )
                     syncShaderParams(next.options, next.splitCompareEnabled, next.splitPosition, next.showResultPreview)
                     next
@@ -271,6 +282,27 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(showSafeZones = !it.showSafeZones) }
     }
 
+    fun toggleZoom() {
+        _uiState.update { state ->
+            val next = if (state.previewZoom > 1.05f) 1f else 2f
+            state.copy(previewZoom = next)
+        }
+    }
+
+    fun updateZoom(scale: Float) {
+        _uiState.update { it.copy(previewZoom = scale.coerceIn(1f, 3f)) }
+    }
+
+    fun resetEnhancementDefaults() {
+        updateOptions {
+            it.copy(
+                denoiseStrength = 0.45f,
+                detailStrength = 0.65f,
+                clarityStrength = 0.25f,
+            )
+        }
+    }
+
     fun setShowResultPreview(showResult: Boolean) {
         _uiState.update { state ->
             syncShaderParams(state.options, state.splitCompareEnabled, state.splitPosition, showResult)
@@ -379,18 +411,39 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
     fun shareCompletedOutput() {
         val completed = _uiState.value.completedOutput ?: return
+        shareVideoUri(completed.outputUriString, completed.outputName)
+    }
+
+    fun shareVideoUri(uriString: String, name: String) {
         val app = getApplication<Application>()
-        val uri = Uri.parse(completed.outputUriString)
+        val uri = Uri.parse(uriString)
         val share = Intent(Intent.ACTION_SEND).apply {
             type = "video/mp4"
             putExtra(Intent.EXTRA_STREAM, uri)
-            clipData = ClipData.newUri(app.contentResolver, completed.outputName, uri)
+            clipData = ClipData.newUri(app.contentResolver, name, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val chooser = Intent.createChooser(share, null).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         app.startActivity(chooser)
+    }
+
+    fun openCompletedOutput() {
+        val completed = _uiState.value.completedOutput ?: return
+        openVideoUri(completed.outputUriString)
+    }
+
+    fun openVideoUri(uriString: String) {
+        val app = getApplication<Application>()
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(uriString), "video/mp4")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { app.startActivity(viewIntent) }
+            .onFailure {
+                _uiState.update { it.copy(errorMessage = "No video player app found to open the file.") }
+            }
     }
 
     private fun syncShaderParams(

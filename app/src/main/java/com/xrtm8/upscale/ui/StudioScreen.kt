@@ -27,9 +27,11 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xrtm8.upscale.BuildConfig
 import com.xrtm8.upscale.engine.LiveShaderParams
+import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
 import com.xrtm8.upscale.model.ExportOptions
@@ -63,6 +66,7 @@ import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.ui.components.OutputBottomSheet
 import com.xrtm8.upscale.ui.components.ProcessingBottomSheet
 import com.xrtm8.upscale.ui.components.VideoPreviewStage
+import com.xrtm8.upscale.ui.components.formatSizeMb
 import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
 import com.xrtm8.upscale.ui.theme.StudioColors
 import java.util.concurrent.atomic.AtomicReference
@@ -80,11 +84,17 @@ fun StudioScreen(
     onToggleSplitCompare: () -> Unit,
     onSplitPositionChange: (Float) -> Unit,
     onToggleSafeZones: () -> Unit,
+    onToggleZoom: () -> Unit,
+    onZoomChange: (Float) -> Unit,
     onSetShowResult: (Boolean) -> Unit,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
+    onResetFilters: () -> Unit,
     onStartExport: () -> Unit,
     onCancelExport: () -> Unit,
+    onOpenOutput: () -> Unit,
     onShareOutput: () -> Unit,
+    onOpenRecent: (RecentExportItem) -> Unit,
+    onShareRecent: (RecentExportItem) -> Unit,
     onDismissError: () -> Unit,
     onCheckUpdate: () -> Unit,
     onStartUpdateDownload: () -> Unit,
@@ -103,7 +113,8 @@ fun StudioScreen(
     val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
     val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
     val mutedText = if (isAmoledWhite) StudioColors.DarkTextSubtle else StudioColors.SubtleGray
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
 
     CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
         Column(
@@ -149,7 +160,7 @@ fun StudioScreen(
                                 .background(StudioColors.BurgundyMuted)
                                 .border(
                                     0.5.dp,
-                                    if (hasReadyUpdate) StudioColors.Success else accent.copy(alpha = 0.5f),
+                                    if (hasReadyUpdate) StudioColors.Success else accentText.copy(alpha = 0.45f),
                                     RoundedCornerShape(8.dp),
                                 )
                                 .clickable {
@@ -167,8 +178,8 @@ fun StudioScreen(
                                 )
                             }
                             Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
-                                color = accent,
+                                text = "\u2066v${BuildConfig.VERSION_NAME}\u2069",
+                                color = accentText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -194,7 +205,7 @@ fun StudioScreen(
                             Icon(
                                 imageVector = if (isAmoledWhite) Icons.Default.DarkMode else Icons.Default.LightMode,
                                 contentDescription = strings.toggleTheme,
-                                tint = if (isAmoledWhite) StudioColors.DarkText else accent,
+                                tint = if (isAmoledWhite) StudioColors.DarkText else accentText,
                                 modifier = Modifier.size(17.dp),
                             )
                         }
@@ -241,42 +252,45 @@ fun StudioScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+                // Only show file strip when a video is actually loaded (eliminates dead noise)
+                if (state.source != null) {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Movie,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.size(16.dp),
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Movie,
+                                contentDescription = null,
+                                tint = accentText,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = state.activePreviewMetadata?.name ?: strings.noVideoLoaded,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = state.activePreviewMetadata?.name ?: strings.noVideoLoaded,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = "\u2066${state.options.postFormat.aspectLabel}\u2069",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = primaryText,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(pillBg)
+                                .border(0.5.dp, barBorder, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = state.options.postFormat.aspectLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = primaryText,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(pillBg)
-                            .border(0.5.dp, barBorder, RoundedCornerShape(8.dp))
-                            .padding(horizontal = 9.dp, vertical = 4.dp),
-                    )
                 }
 
                 VideoPreviewStage(
@@ -287,81 +301,97 @@ fun StudioScreen(
                     splitCompareEnabled = state.splitCompareEnabled,
                     splitPosition = state.splitPosition,
                     showSafeZones = state.showSafeZones,
+                    previewZoom = state.previewZoom,
                     showResultPreview = state.showResultPreview,
                     isLocked = state.isLocked,
+                    recentExport = state.recentExport,
                     strings = strings,
                     onPickVideo = onPickVideo,
+                    onSelectQuickFormat = { format ->
+                        onUpdateOptions { it.copy(postFormat = format) }
+                    },
                     onSplitPositionChange = onSplitPositionChange,
                     onCropOffsetChange = { ox, oy ->
                         onUpdateOptions { it.copy(cropOffsetX = ox, cropOffsetY = oy) }
                     },
+                    onZoomChange = onZoomChange,
+                    onOpenRecent = onOpenRecent,
+                    onShareRecent = onShareRecent,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (state.source != null && !state.showResultPreview) {
+                if (state.source != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!state.showResultPreview) {
+                                MiniChipButton(
+                                    icon = Icons.Rounded.Compare,
+                                    label = strings.compare,
+                                    active = state.splitCompareEnabled,
+                                    onClick = onToggleSplitCompare,
+                                )
+                                MiniChipButton(
+                                    icon = Icons.Rounded.CropFree,
+                                    label = strings.safeZones,
+                                    active = state.showSafeZones,
+                                    onClick = onToggleSafeZones,
+                                )
+                            }
                             MiniChipButton(
-                                icon = Icons.Rounded.Compare,
-                                label = strings.compare,
-                                active = state.splitCompareEnabled,
-                                onClick = onToggleSplitCompare,
+                                icon = Icons.Rounded.ZoomIn,
+                                label = if (state.previewZoom > 1.05f) "\u2066%.1fx\u2069".format(state.previewZoom) else strings.zoom,
+                                active = state.previewZoom > 1.05f,
+                                onClick = onToggleZoom,
                             )
-                            MiniChipButton(
-                                icon = Icons.Rounded.CropFree,
-                                label = strings.safeZones,
-                                active = state.showSafeZones,
-                                onClick = onToggleSafeZones,
-                            )
+                        }
+
+                        if (state.completedOutput != null) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                MiniChipButton(
+                                    icon = null,
+                                    label = strings.original,
+                                    active = !state.showResultPreview,
+                                    onClick = { onSetShowResult(false) },
+                                )
+                                MiniChipButton(
+                                    icon = null,
+                                    label = strings.result,
+                                    active = state.showResultPreview,
+                                    onClick = { onSetShowResult(true) },
+                                )
+                            }
                         }
                     }
 
-                    if (state.completedOutput != null) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            MiniChipButton(
-                                icon = null,
-                                label = strings.original,
-                                active = !state.showResultPreview,
-                                onClick = { onSetShowResult(false) },
-                            )
-                            MiniChipButton(
-                                icon = null,
-                                label = strings.result,
-                                active = state.showResultPreview,
-                                onClick = { onSetShowResult(true) },
-                            )
-                        }
+                    val meta = state.activePreviewMetadata
+                    if (meta != null) {
+                        val hdrTag = if (meta.isHdr) " · HDR" else ""
+                        Text(
+                            text = "\u2066${meta.displayWidth} × ${meta.displayHeight}\u2069 · \u2066%.1fs · %.0f fps%s\u2069".format(
+                                meta.durationMs / 1000.0,
+                                meta.frameRate,
+                                hdrTag,
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = secondaryText,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        )
                     }
                 }
-
-                val meta = state.activePreviewMetadata
-                Text(
-                    text = if (meta != null) {
-                        val hdrTag = if (meta.isHdr) " · HDR" else ""
-                        "${meta.displayWidth} × ${meta.displayHeight} · %.1fs · %.0f fps%s".format(
-                            meta.durationMs / 1000.0,
-                            meta.frameRate,
-                            hdrTag,
-                        )
-                    } else {
-                        strings.localNote
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = secondaryText,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
             }
 
             ExportStatusStrip(
                 exportState = state.exportState,
+                sourceSizeBytes = state.source?.sizeBytes ?: 0L,
                 strings = strings,
                 onCancel = onCancelExport,
+                onOpen = onOpenOutput,
                 onShare = onShareOutput,
             )
 
@@ -394,7 +424,7 @@ fun StudioScreen(
                 }
             }
 
-            // Athar-style Floating Ergonomic Studio Dock
+            // Athar-style Floating Ergonomic Studio Dock (no duplicate import CTA when empty)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -418,7 +448,7 @@ fun StudioScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${state.options.platform.label} · $formatLabel · $outW × $outH",
+                        text = "${state.options.platform.label} · $formatLabel · \u2066$outW × $outH\u2069",
                         style = MaterialTheme.typography.labelSmall,
                         color = secondaryText,
                     )
@@ -462,32 +492,31 @@ fun StudioScreen(
                     }
                 }
 
-                Button(
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        if (state.source == null) onPickVideo() else onStartExport()
-                    },
-                    enabled = !state.isLocked,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = accent,
-                        contentColor = StudioColors.PureWhite,
-                        disabledContainerColor = if (isAmoledWhite) StudioColors.WhiteSurfaceActive else StudioColors.StudioSurfaceActive,
-                        disabledContentColor = mutedText,
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                ) {
-                    Text(
-                        text = when {
-                            state.isImporting -> strings.preparing
-                            state.source == null -> strings.importVideo
-                            else -> strings.enhanceAndExport
+                // Primary CTA only shown when a video is loaded (or importing), avoiding duplicate welcome button
+                if (state.source != null || state.isImporting) {
+                    Button(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onStartExport()
                         },
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
+                        enabled = !state.isLocked,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accentFill,
+                            contentColor = StudioColors.PureWhite,
+                            disabledContainerColor = if (isAmoledWhite) StudioColors.WhiteSurfaceActive else StudioColors.StudioSurfaceActive,
+                            disabledContentColor = mutedText,
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                    ) {
+                        Text(
+                            text = if (state.isImporting) strings.preparing else strings.enhanceAndExport,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
         }
@@ -499,6 +528,7 @@ fun StudioScreen(
                 capabilities = state.capabilities,
                 strings = strings,
                 onUpdateOptions = onUpdateOptions,
+                onResetFilters = onResetFilters,
                 onDismiss = onCloseSheet,
             )
             StudioSheet.OUTPUT -> OutputBottomSheet(
@@ -524,19 +554,20 @@ private fun MiniChipButton(
 ) {
     val haptic = LocalHapticFeedback.current
     val isAmoledWhite = LocalAmoledWhite.current
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentBorder = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
     val bg = when {
         active -> StudioColors.BurgundyMuted
         isAmoledWhite -> StudioColors.WhiteSurfaceElevated
         else -> StudioColors.StudioSurface
     }
     val border = when {
-        active -> accent
+        active -> accentBorder
         isAmoledWhite -> StudioColors.WhiteBorder
         else -> StudioColors.StudioBorder
     }
     val textColor = when {
-        active -> if (isAmoledWhite) accent else StudioColors.PureWhite
+        active -> if (isAmoledWhite) accentText else StudioColors.PureWhite
         isAmoledWhite -> StudioColors.DarkTextMuted
         else -> StudioColors.MutedWhite
     }
@@ -558,7 +589,7 @@ private fun MiniChipButton(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (active) accent else textColor,
+                tint = if (active) accentText else textColor,
                 modifier = Modifier.size(14.dp),
             )
         }
@@ -582,7 +613,8 @@ private fun StudioDockItem(
 ) {
     val haptic = LocalHapticFeedback.current
     val isAmoledWhite = LocalAmoledWhite.current
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentBg = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
     val mutedText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
     val subtleIcon = if (isAmoledWhite) StudioColors.DarkTextSubtle else StudioColors.SubtleGray
 
@@ -590,7 +622,7 @@ private fun StudioDockItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) accent.copy(alpha = 0.18f) else Color.Transparent)
+            .background(if (selected) accentBg.copy(alpha = 0.18f) else Color.Transparent)
             .clickable(enabled = enabled) {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onClick()
@@ -600,13 +632,13 @@ private fun StudioDockItem(
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (!enabled) subtleIcon else if (selected) accent else subtleIcon,
+            tint = if (!enabled) subtleIcon else if (selected) accentText else subtleIcon,
             modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
-            color = if (!enabled) subtleIcon else if (selected) accent else mutedText,
+            color = if (!enabled) subtleIcon else if (selected) accentText else mutedText,
             fontSize = 11.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
@@ -618,15 +650,17 @@ private fun StudioDockItem(
 @Composable
 private fun ExportStatusStrip(
     exportState: ExportState,
+    sourceSizeBytes: Long,
     strings: StudioStrings,
     onCancel: () -> Unit,
+    onOpen: () -> Unit,
     onShare: () -> Unit,
 ) {
     if (exportState is ExportState.Idle) return
     val isAmoledWhite = LocalAmoledWhite.current
     val cardBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
     val cardBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
     val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
 
     Column(
@@ -644,18 +678,20 @@ private fun ExportStatusStrip(
                 Text(strings.preparing, style = MaterialTheme.typography.labelMedium)
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
-                    color = accent,
+                    color = accentFill,
                     trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
                 )
             }
             is ExportState.Running -> {
+                val eta = exportState.estimatedRemainingSeconds(System.currentTimeMillis())
+                val etaText = if (eta != null) " · ${strings.etaSeconds.format(eta)}" else ""
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${strings.exporting} · ${(exportState.progress * 100f).roundToInt()}%",
+                        text = "${strings.exporting} · \u2066${(exportState.progress * 100f).roundToInt()}%\u2069$etaText",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                     )
@@ -671,11 +707,16 @@ private fun ExportStatusStrip(
                 LinearProgressIndicator(
                     progress = { exportState.progress.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
-                    color = accent,
+                    color = accentFill,
                     trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
                 )
             }
             is ExportState.Completed -> {
+                val sizeCompare = if (sourceSizeBytes > 0L && exportState.metadata.sizeBytes > 0L) {
+                    " · \u2066${formatSizeMb(sourceSizeBytes)} → ${formatSizeMb(exportState.metadata.sizeBytes)}\u2069"
+                } else {
+                    ""
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -689,26 +730,38 @@ private fun ExportStatusStrip(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "${strings.savedToGallery} · ${exportState.outputName}",
+                            text = "${strings.savedToGallery}$sizeCompare",
                             style = MaterialTheme.typography.labelSmall,
                             color = secondaryText,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Button(
-                        onClick = onShare,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accent,
-                            contentColor = StudioColors.PureWhite,
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(34.dp),
-                    ) {
-                        Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(strings.shareVideo, style = MaterialTheme.typography.labelSmall, color = StudioColors.PureWhite, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = onOpen,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp),
+                        ) {
+                            Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(strings.openInGallery, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Button(
+                            onClick = onShare,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = accentFill,
+                                contentColor = StudioColors.PureWhite,
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(34.dp),
+                        ) {
+                            Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(strings.shareVideo, style = MaterialTheme.typography.labelSmall, color = StudioColors.PureWhite, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -745,7 +798,8 @@ private fun UpdateNoticeStrip(
     val stripBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
     val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
     val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
-    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
 
     Column(
         modifier = Modifier
@@ -770,15 +824,15 @@ private fun UpdateNoticeStrip(
                 Icon(
                     imageVector = Icons.Rounded.SystemUpdateAlt,
                     contentDescription = null,
-                    tint = if (status is UpdateStatus.Error) StudioColors.Danger else accent,
+                    tint = if (status is UpdateStatus.Error) StudioColors.Danger else accentText,
                     modifier = Modifier.size(15.dp),
                 )
                 val label = when (status) {
                     UpdateStatus.Checking -> strings.checkingUpdate
                     UpdateStatus.UpToDate -> strings.upToDate
-                    is UpdateStatus.Available -> "${strings.updateAvailable} · v${status.info.versionName}"
-                    is UpdateStatus.Downloading -> "${strings.downloadingUpdate} · ${(status.progress * 100f).roundToInt()}%"
-                    is UpdateStatus.ReadyToInstall -> "${strings.updateReady} · v${status.info.versionName}"
+                    is UpdateStatus.Available -> "${strings.updateAvailable} · \u2066v${status.info.versionName}\u2069"
+                    is UpdateStatus.Downloading -> "${strings.downloadingUpdate} · \u2066${(status.progress * 100f).roundToInt()}%\u2069"
+                    is UpdateStatus.ReadyToInstall -> "${strings.updateReady} · \u2066v${status.info.versionName}\u2069"
                     is UpdateStatus.Error -> status.message
                     UpdateStatus.Idle -> ""
                 }
@@ -800,7 +854,7 @@ private fun UpdateNoticeStrip(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(accent)
+                                .background(accentFill)
                                 .clickable(onClick = onDownload)
                                 .padding(horizontal = 10.dp, vertical = 4.dp),
                         ) {
@@ -850,7 +904,7 @@ private fun UpdateNoticeStrip(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(3.dp),
-                color = accent,
+                color = accentFill,
                 trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
             )
         }

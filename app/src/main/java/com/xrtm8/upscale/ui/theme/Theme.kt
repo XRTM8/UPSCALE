@@ -40,6 +40,7 @@ object StudioColors {
 
     // Velvet Burgundy Luxury Accent
     val BurgundyAccent = Color(0xFF9E1B42)
+    val BurgundyTextDark = Color(0xFFE86488)
     val BurgundyDeep = Color(0xFF72142B)
     val BurgundyWarm = Color(0xFF8B1538)
     val BurgundyMuted = Color(0x249E1B42)

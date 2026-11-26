@@ -1,5 +1,6 @@
 package com.xrtm8.upscale.engine
 
+import android.content.ContentUris
 import android.content.Context
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -9,10 +10,20 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.PowerManager
 import android.os.StatFs
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.media3.common.MimeTypes
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.VideoMetadata
+
+data class RecentExportItem(
+    val uriString: String,
+    val name: String,
+    val width: Int,
+    val height: Int,
+    val durationMs: Long,
+    val sizeBytes: Long,
+)
 
 object MediaInspector {
 
@@ -148,4 +159,45 @@ object MediaInspector {
         videoCaps?.isSizeSupported(width, height) == true ||
             videoCaps?.isSizeSupported(height, width) == true
     }.getOrDefault(false)
+
+    fun queryLatestExport(context: Context): RecentExportItem? = runCatching {
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.SIZE,
+        )
+        val selection = "${MediaStore.Video.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Video.Media.IS_PENDING} = 0"
+        val args = arrayOf("%UPSCALE%")
+        val sortOrder = "${MediaStore.Video.Media.DATE_MODIFIED} DESC"
+        context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projection,
+            selection,
+            args,
+            sortOrder,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
+                val name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)) ?: "UPSCALE.mp4"
+                val w = cursor.getInt(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH))
+                val h = cursor.getInt(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT))
+                val dur = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION))
+                val size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE))
+                val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                RecentExportItem(
+                    uriString = uri.toString(),
+                    name = name,
+                    width = w,
+                    height = h,
+                    durationMs = dur,
+                    sizeBytes = size,
+                )
+            } else {
+                null
+            }
+        }
+    }.getOrNull()
 }
