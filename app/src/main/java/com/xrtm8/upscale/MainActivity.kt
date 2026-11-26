@@ -1,8 +1,10 @@
 package com.xrtm8.upscale
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,6 +36,10 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.BLACK),
         )
         super.onCreate(savedInstanceState)
+
+        if (savedInstanceState == null) {
+            handleIncomingVideoIntent(intent)
+        }
 
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,7 +96,10 @@ class MainActivity : ComponentActivity() {
                     onZoomChange = viewModel::updateZoom,
                     onSetShowResult = viewModel::setShowResultPreview,
                     onUpdateOptions = viewModel::updateOptions,
+                    onApplyPreset = viewModel::applyPreset,
                     onResetFilters = viewModel::resetEnhancementDefaults,
+                    onSaveSnapshot = viewModel::saveSnapshot,
+                    onSnapshotFailed = viewModel::reportSnapshotFailed,
                     onStartExport = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -105,6 +114,11 @@ class MainActivity : ComponentActivity() {
                     onShareOutput = viewModel::shareCompletedOutput,
                     onOpenRecent = { item -> viewModel.openVideoUri(item.uriString) },
                     onShareRecent = { item -> viewModel.shareVideoUri(item.uriString, item.name) },
+                    onImportRecent = { item ->
+                        viewModel.closeSheet()
+                        viewModel.importVideo(Uri.parse(item.uriString))
+                    },
+                    onRefreshRecents = viewModel::refreshRecentExports,
                     onDismissError = viewModel::dismissError,
                     onCheckUpdate = { viewModel.checkForUpdates(manual = true) },
                     onStartUpdateDownload = viewModel::startUpdateDownload,
@@ -121,6 +135,31 @@ class MainActivity : ComponentActivity() {
                     onDismissUpdateBanner = viewModel::dismissUpdateBanner,
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingVideoIntent(intent)
+    }
+
+    private fun handleIncomingVideoIntent(intent: Intent?) {
+        if (intent == null) return
+        val incomingUri: Uri? = when (intent.action) {
+            Intent.ACTION_SEND -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            }
+            Intent.ACTION_VIEW -> intent.data
+            else -> null
+        }
+        if (incomingUri != null) {
+            viewModel.importVideo(incomingUri)
         }
     }
 }

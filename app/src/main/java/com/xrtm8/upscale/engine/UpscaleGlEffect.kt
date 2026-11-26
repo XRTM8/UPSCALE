@@ -16,12 +16,15 @@ import androidx.media3.effect.Presentation
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlan
 import com.xrtm8.upscale.model.FramingMode
+import com.xrtm8.upscale.model.NormalizedCropRect
 import java.util.concurrent.atomic.AtomicReference
 
 data class LiveShaderParams(
+    val deblock: Float = 0.25f,
     val denoise: Float = 0.45f,
     val detail: Float = 0.65f,
     val clarity: Float = 0.25f,
+    val vibrance: Float = 0.10f,
     /**
      * -1f = apply enhancement across the entire frame (export or full enhanced preview).
      * 0f..1f = live split-screen divider X (left of divider = original, right = enhanced).
@@ -43,14 +46,19 @@ class UpscaleGlEffect(
     override fun isNoOp(inputWidth: Int, inputHeight: Int): Boolean {
         if (isLivePreview) return false
         val params = paramsProvider()
-        return params.showOriginalOnly ||
-            (params.denoise <= 0.001f && params.detail <= 0.001f && params.clarity <= 0.001f)
+        return params.showOriginalOnly || (
+            params.deblock <= 0.001f &&
+                params.denoise <= 0.001f &&
+                params.detail <= 0.001f &&
+                params.clarity <= 0.001f &&
+                params.vibrance <= 0.001f
+            )
     }
 }
 
 @UnstableApi
 private class UpscaleShaderProgram(
-    useHdr: Boolean,
+    private val useHdr: Boolean,
     private val paramsProvider: () -> LiveShaderParams,
 ) : BaseGlShaderProgram(useHdr, /* texturePoolCapacity = */ 1) {
 
@@ -83,10 +91,13 @@ private class UpscaleShaderProgram(
             glProgram.use()
             glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
             glProgram.setFloatsUniform("uTexelSize", floatArrayOf(texelWidth, texelHeight))
+            glProgram.setFloatUniform("uDeblock", if (params.showOriginalOnly) 0f else params.deblock)
             glProgram.setFloatUniform("uDenoise", if (params.showOriginalOnly) 0f else params.denoise)
             glProgram.setFloatUniform("uDetail", if (params.showOriginalOnly) 0f else params.detail)
             glProgram.setFloatUniform("uClarity", if (params.showOriginalOnly) 0f else params.clarity)
+            glProgram.setFloatUniform("uVibrance", if (params.showOriginalOnly) 0f else params.vibrance)
             glProgram.setFloatUniform("uSplitX", if (params.showOriginalOnly) 2f else params.splitX)
+            glProgram.setFloatUniform("uHdrMode", if (useHdr) 1f else 0f)
             glProgram.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (error: Exception) {
@@ -110,13 +121,20 @@ private class UpscaleShaderProgram(
         """
 
         private const val FRAGMENT_SHADER = """
+            #ifdef GL_FRAGMENT_PRECISION_HIGH
+            precision highp float;
+            #else
             precision mediump float;
+            #endif
             uniform sampler2D uTexSampler;
             uniform vec2 uTexelSize;
+            uniform float uDeblock;
             uniform float uDenoise;
             uniform float uDetail;
             uniform float uClarity;
+            uniform float uVibrance;
             uniform float uSplitX;
+            uniform float uHdrMode;
             varying vec2 vTexSamplingCoord;
 
             float luma(vec3 c) {
@@ -141,18 +159,31 @@ private class UpscaleShaderProgram(
                 vec3 w = texture2D(uTexSampler, vTexSamplingCoord - dx).rgb;
                 vec3 e = texture2D(uTexSampler, vTexSamplingCoord + dx).rgb;
 
+                // 0) Mild compression deblocking (targets flat/gradient macroblock edges).
+                vec3 base = center;
+                if (uDeblock > 0.001) {
+                    vec3 nw = texture2D(uTexSampler, vTexSamplingCoord - dx - dy).rgb;
+                    vec3 ne = texture2D(uTexSampler, vTexSamplingCoord + dx - dy).rgb;
+                    vec3 sw = texture2D(uTexSampler, vTexSamplingCoord - dx + dy).rgb;
+                    vec3 se = texture2D(uTexSampler, vTexSamplingCoord + dx + dy).rgb;
+                    vec3 ringAvg = (n + s + w + e) * 0.15 + (nw + ne + sw + se) * 0.10;
+                    float diff = abs(luma(ringAvg) - luma(center));
+                    float flatMask = smoothstep(0.08, 0.008, diff);
+                    base = mix(center, ringAvg, uDeblock * 0.52 * flatMask);
+                }
+
                 // 1) Edge-aware bilateral denoise (preserves edges & facial detail).
-                vec3 denoised = center;
+                vec3 denoised = base;
                 if (uDenoise > 0.001) {
-                    float cLuma = luma(center);
+                    float cLuma = luma(base);
                     float sigma = mix(0.14, 0.035, uDenoise);
                     float wN = exp(-abs(luma(n) - cLuma) / sigma);
                     float wS = exp(-abs(luma(s) - cLuma) / sigma);
                     float wW = exp(-abs(luma(w) - cLuma) / sigma);
                     float wE = exp(-abs(luma(e) - cLuma) / sigma);
                     float wSum = 1.0 + wN + wS + wW + wE;
-                    vec3 smoothed = (center + n * wN + s * wS + w * wW + e * wE) / wSum;
-                    denoised = mix(center, smoothed, uDenoise * 0.78);
+                    vec3 smoothed = (base + n * wN + s * wS + w * wW + e * wE) / wSum;
+                    denoised = mix(base, smoothed, uDenoise * 0.75);
                 }
 
                 // 2) Contrast Adaptive Luma Sharpening (clamped to prevent halos).
@@ -170,20 +201,39 @@ private class UpscaleShaderProgram(
                     float avgNeighbors = 0.25 * (lN + lS + lW + lE);
                     float highPass = lC - avgNeighbors;
 
-                    // Stronger sharpening on medium textures, damped on flat noise & harsh edges.
                     float adaptiveGain = uDetail * 1.15 * clamp(1.0 - localContrast * 1.25, 0.2, 1.0);
                     float deltaL = clamp(highPass * adaptiveGain, -0.14, 0.14);
-                    sharpened = clamp(denoised + vec3(deltaL), 0.0, 1.0);
+                    sharpened = max(denoised + vec3(deltaL), 0.0);
+                    if (uHdrMode < 0.5) {
+                        sharpened = min(sharpened, 1.0);
+                    }
                 }
 
                 // 3) Subtle mid-tone clarity curve without clipping highlights.
-                vec3 finalRgb = sharpened;
+                vec3 clarified = sharpened;
                 if (uClarity > 0.001) {
-                    vec3 sCurve = sharpened * sharpened * (3.0 - 2.0 * sharpened);
-                    finalRgb = mix(sharpened, sCurve, uClarity * 0.36);
+                    vec3 unit = clamp(sharpened, 0.0, 1.0);
+                    vec3 sCurve = unit * unit * (3.0 - 2.0 * unit);
+                    vec3 target = (uHdrMode > 0.5) ? max(sharpened, sCurve) : sCurve;
+                    clarified = mix(sharpened, target, uClarity * 0.34);
                 }
 
-                gl_FragColor = vec4(clamp(finalRgb, 0.0, 1.0), centerSample.a);
+                // 4) Skin-protective vibrance boost (lifts muted colors, leaves saturated tones safe).
+                vec3 finalRgb = clarified;
+                if (uVibrance > 0.001) {
+                    float l = luma(clarified);
+                    float maxCh = max(clarified.r, max(clarified.g, clarified.b));
+                    float minCh = min(clarified.r, min(clarified.g, clarified.b));
+                    float sat = maxCh - minCh;
+                    float vibFactor = uVibrance * 0.55 * (1.0 - clamp(sat * 1.4, 0.0, 1.0));
+                    finalRgb = mix(vec3(l), clarified, 1.0 + vibFactor);
+                }
+
+                finalRgb = max(finalRgb, 0.0);
+                if (uHdrMode < 0.5) {
+                    finalRgb = min(finalRgb, 1.0);
+                }
+                gl_FragColor = vec4(finalRgb, centerSample.a);
             }
         """
     }
@@ -197,26 +247,29 @@ object VideoEffectsFactory {
         plan.cropRect?.let { rect ->
             effects += Crop(rect.left, rect.right, rect.bottom, rect.top)
         }
-        val params = LiveShaderParams(
-            denoise = options.denoiseStrength,
-            detail = options.detailStrength,
-            clarity = options.clarityStrength,
-            splitX = -1f,
-            showOriginalOnly = false,
-        )
-        effects += UpscaleGlEffect(paramsProvider = { params }, isLivePreview = false)
         val layout = if (options.framing == FramingMode.COVER) {
             Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         } else {
             Presentation.LAYOUT_SCALE_TO_FIT
         }
+        // Upscale / frame first so deblock + denoise + CAS detail operate at the target resolution.
         effects += Presentation.createForWidthAndHeight(plan.targetWidth, plan.targetHeight, layout)
+        val params = LiveShaderParams(
+            deblock = options.deblockStrength,
+            denoise = options.denoiseStrength,
+            detail = options.detailStrength,
+            clarity = options.clarityStrength,
+            vibrance = options.vibranceStrength,
+            splitX = -1f,
+            showOriginalOnly = false,
+        )
+        effects += UpscaleGlEffect(paramsProvider = { params }, isLivePreview = false)
         return effects
     }
 
     fun buildPreviewEffects(
         paramsRef: AtomicReference<LiveShaderParams>,
-        cropRect: com.xrtm8.upscale.model.NormalizedCropRect?,
+        cropRect: NormalizedCropRect?,
     ): List<Effect> {
         val effects = mutableListOf<Effect>()
         cropRect?.let { rect ->

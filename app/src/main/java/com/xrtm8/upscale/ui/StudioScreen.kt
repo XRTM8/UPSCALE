@@ -1,8 +1,14 @@
 package com.xrtm8.upscale.ui
 
+import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,8 +33,10 @@ import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.CropFree
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Tune
@@ -42,6 +51,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,21 +64,29 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.xrtm8.upscale.BuildConfig
 import com.xrtm8.upscale.engine.LiveShaderParams
 import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportState
+import com.xrtm8.upscale.model.FramingMode
+import com.xrtm8.upscale.model.OutputResolution
 import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.ui.components.OutputBottomSheet
 import com.xrtm8.upscale.ui.components.ProcessingBottomSheet
+import com.xrtm8.upscale.ui.components.RecentExportsBottomSheet
 import com.xrtm8.upscale.ui.components.VideoPreviewStage
 import com.xrtm8.upscale.ui.components.formatSizeMb
 import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
@@ -88,13 +110,18 @@ fun StudioScreen(
     onZoomChange: (Float) -> Unit,
     onSetShowResult: (Boolean) -> Unit,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
+    onApplyPreset: (EnhancementPreset) -> Unit,
     onResetFilters: () -> Unit,
+    onSaveSnapshot: (Bitmap) -> Unit,
+    onSnapshotFailed: () -> Unit,
     onStartExport: () -> Unit,
     onCancelExport: () -> Unit,
     onOpenOutput: () -> Unit,
     onShareOutput: () -> Unit,
     onOpenRecent: (RecentExportItem) -> Unit,
     onShareRecent: (RecentExportItem) -> Unit,
+    onImportRecent: (RecentExportItem) -> Unit,
+    onRefreshRecents: () -> Unit,
     onDismissError: () -> Unit,
     onCheckUpdate: () -> Unit,
     onStartUpdateDownload: () -> Unit,
@@ -105,6 +132,25 @@ fun StudioScreen(
     val layoutDirection = if (state.language.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
     val isAmoledWhite = LocalAmoledWhite.current
     val haptic = LocalHapticFeedback.current
+    val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var captureFrameAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    DisposableEffect(state.isExportRunning, view) {
+        view.keepScreenOn = state.isExportRunning
+        onDispose { view.keepScreenOn = false }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                onRefreshRecents()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val rootBg = if (isAmoledWhite) StudioColors.AmoledWhite else StudioColors.AmoledBlack
     val barBg = if (isAmoledWhite) StudioColors.GlassBackgroundWhite else StudioColors.GlassBackground
@@ -121,9 +167,9 @@ fun StudioScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(rootBg)
-                .safeDrawingPadding(),
+                .safeDrawingPadding()
+                .animateContentSize(),
         ) {
-            // Athar-style floating pill TopStudioBar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -190,6 +236,28 @@ fun StudioScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (state.recentExports.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(pillBg)
+                                    .border(0.5.dp, barBorder, CircleShape)
+                                    .clickable(enabled = !state.isLocked) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onOpenSheet(StudioSheet.EXPORTS)
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.History,
+                                    contentDescription = strings.exportsHistory,
+                                    tint = primaryText,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                        }
+
                         Box(
                             modifier = Modifier
                                 .size(34.dp)
@@ -234,7 +302,11 @@ fun StudioScreen(
                 }
             }
 
-            if (state.updateBannerVisible) {
+            AnimatedVisibility(
+                visible = state.updateBannerVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
                 UpdateNoticeStrip(
                     status = state.updateStatus,
                     strings = strings,
@@ -244,7 +316,6 @@ fun StudioScreen(
                 )
             }
 
-            // Main Studio Stage
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -252,7 +323,6 @@ fun StudioScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Only show file strip when a video is actually loaded (eliminates dead noise)
                 if (state.source != null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -317,6 +387,9 @@ fun StudioScreen(
                     onZoomChange = onZoomChange,
                     onOpenRecent = onOpenRecent,
                     onShareRecent = onShareRecent,
+                    onCaptureActionReady = { action -> captureFrameAction = action },
+                    onSaveSnapshot = onSaveSnapshot,
+                    onSnapshotFailed = onSnapshotFailed,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth(),
@@ -328,7 +401,12 @@ fun StudioScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                        ) {
                             if (!state.showResultPreview) {
                                 MiniChipButton(
                                     icon = Icons.Rounded.Compare,
@@ -349,9 +427,18 @@ fun StudioScreen(
                                 active = state.previewZoom > 1.05f,
                                 onClick = onToggleZoom,
                             )
+                            if (captureFrameAction != null) {
+                                MiniChipButton(
+                                    icon = Icons.Rounded.PhotoCamera,
+                                    label = strings.saveFrame,
+                                    active = false,
+                                    onClick = { captureFrameAction?.invoke() },
+                                )
+                            }
                         }
 
                         if (state.completedOutput != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MiniChipButton(
                                     icon = null,
@@ -383,7 +470,43 @@ fun StudioScreen(
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
                     }
+
+                    if (!state.showResultPreview && state.exportState is ExportState.Idle) {
+                        val srcShort = minOf(state.source.displayWidth, state.source.displayHeight)
+                        val isLandscapeSrc = state.source.displayWidth > state.source.displayHeight
+                        val hintText = when {
+                            isLandscapeSrc && state.options.postFormat == PostFormat.REEL && state.options.framing == FramingMode.CONTAIN ->
+                                strings.recommendCoverHint
+                            srcShort < 1080 && state.options.resolution == OutputResolution.FHD_1080P ->
+                                strings.recommendUpscaleHint
+                            else -> null
+                        }
+                        if (hintText != null) {
+                            Text(
+                                text = hintText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = accentText,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            )
+                        }
+                    }
                 }
+            }
+
+            AnimatedVisibility(
+                visible = state.snapshotStatus != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                val ok = state.snapshotStatus == SnapshotStatus.SAVED
+                Text(
+                    text = if (ok) strings.snapshotSaved else strings.snapshotFailed,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (ok) StudioColors.Success else StudioColors.Danger,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .padding(horizontal = 18.dp, vertical = 2.dp),
+                )
             }
 
             ExportStatusStrip(
@@ -395,36 +518,37 @@ fun StudioScreen(
                 onShare = onShareOutput,
             )
 
-            if (state.errorMessage != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF281216))
-                        .border(0.5.dp, StudioColors.Danger.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = state.errorMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = StudioColors.PureWhite,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = onDismissError, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = strings.close,
-                            tint = StudioColors.PureWhite,
-                            modifier = Modifier.size(16.dp),
+            AnimatedVisibility(visible = state.error != null) {
+                state.error?.let { err ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF281216))
+                            .border(0.5.dp, StudioColors.Danger.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = strings.formatError(err),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StudioColors.PureWhite,
+                            modifier = Modifier.weight(1f),
                         )
+                        IconButton(onClick = onDismissError, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = strings.close,
+                                tint = StudioColors.PureWhite,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
             }
 
-            // Athar-style Floating Ergonomic Studio Dock (no duplicate import CTA when empty)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -453,7 +577,7 @@ fun StudioScreen(
                         color = secondaryText,
                     )
                     Text(
-                        text = state.options.codec.label,
+                        text = "${strings.presetLabel(state.options.preset)} · ${state.options.codec.label}",
                         style = MaterialTheme.typography.labelSmall,
                         color = mutedText,
                         fontWeight = FontWeight.Bold,
@@ -492,7 +616,6 @@ fun StudioScreen(
                     }
                 }
 
-                // Primary CTA only shown when a video is loaded (or importing), avoiding duplicate welcome button
                 if (state.source != null || state.isImporting) {
                     Button(
                         onClick = {
@@ -528,6 +651,7 @@ fun StudioScreen(
                 capabilities = state.capabilities,
                 strings = strings,
                 onUpdateOptions = onUpdateOptions,
+                onApplyPreset = onApplyPreset,
                 onResetFilters = onResetFilters,
                 onDismiss = onCloseSheet,
             )
@@ -538,6 +662,14 @@ fun StudioScreen(
                 plan = state.currentPlan(),
                 strings = strings,
                 onUpdateOptions = onUpdateOptions,
+                onDismiss = onCloseSheet,
+            )
+            StudioSheet.EXPORTS -> RecentExportsBottomSheet(
+                items = state.recentExports,
+                strings = strings,
+                onOpen = onOpenRecent,
+                onShare = onShareRecent,
+                onImport = onImportRecent,
                 onDismiss = onCloseSheet,
             )
             StudioSheet.NONE -> {}
@@ -675,7 +807,21 @@ private fun ExportStatusStrip(
     ) {
         when (exportState) {
             ExportState.Preparing -> {
-                Text(strings.preparing, style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(strings.preparing, style = MaterialTheme.typography.labelMedium)
+                    OutlinedButton(
+                        onClick = onCancel,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp),
+                    ) {
+                        Text(strings.cancel, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
                     color = accentFill,
@@ -774,7 +920,7 @@ private fun ExportStatusStrip(
             }
             is ExportState.Failed -> {
                 Text(
-                    text = "${strings.exportFailed}: ${exportState.message}",
+                    text = "${strings.exportFailed}: ${strings.formatError(exportState.error)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = StudioColors.Danger,
                 )
@@ -895,6 +1041,24 @@ private fun UpdateNoticeStrip(
                         )
                     }
                 }
+            }
+        }
+
+        if (status is UpdateStatus.Available && status.info.releaseNotes.isNotBlank()) {
+            val summary = status.info.releaseNotes
+                .lineSequence()
+                .map { it.trim().removePrefix("-").removePrefix("*").trim() }
+                .filter { it.isNotBlank() && !it.startsWith("#") }
+                .take(2)
+                .joinToString(" · ")
+            if (summary.isNotBlank()) {
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondaryText,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
 

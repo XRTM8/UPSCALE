@@ -41,6 +41,33 @@ enum class VideoCodecChoice(val label: String) {
     HEVC("HEVC"),
 }
 
+enum class EnhancementPreset {
+    NATURAL,
+    CRISP_TEXT,
+    LOW_LIGHT,
+    CINEMA,
+    CUSTOM,
+}
+
+sealed interface AppError {
+    data object InvalidSourceVideo : AppError
+    data class InsufficientStorage(val requiredMb: Long, val availableMb: Long) : AppError
+    data class UnableToReadVideo(val detail: String? = null) : AppError
+    data class UnableToPrepareExport(val detail: String? = null) : AppError
+    data object NoVideoPlayerFound : AppError
+    data object ExportMissingAudio : AppError
+    data object ExportDurationMismatch : AppError
+    data class ExportDimensionMismatch(
+        val actualWidth: Int,
+        val actualHeight: Int,
+        val expectedWidth: Int,
+        val expectedHeight: Int,
+    ) : AppError
+    data class GenericFailure(val detail: String) : AppError
+}
+
+class LocalizedExportException(val appError: AppError, message: String) : IllegalStateException(message)
+
 data class VideoMetadata(
     val uriString: String,
     val name: String,
@@ -58,6 +85,7 @@ data class VideoMetadata(
 
 data class DeviceCapabilities(
     val supports1080pH264: Boolean = true,
+    val supports1080pHevc: Boolean = false,
     val supports4kH264: Boolean = false,
     val supports4kHevc: Boolean = false,
     val thermalStatus: Int = 0,
@@ -65,6 +93,11 @@ data class DeviceCapabilities(
 ) {
     val supports4k: Boolean get() = supports4kH264 || supports4kHevc
     val isThermallyThrottled: Boolean get() = thermalStatus >= 3 // PowerManager.THERMAL_STATUS_SEVERE
+
+    fun supportsHevcFor(resolution: OutputResolution): Boolean = when (resolution) {
+        OutputResolution.FHD_1080P -> supports1080pHevc || supports4kHevc
+        OutputResolution.UHD_4K -> supports4kHevc
+    }
 }
 
 data class ExportOptions(
@@ -74,14 +107,54 @@ data class ExportOptions(
     val framing: FramingMode = FramingMode.CONTAIN,
     val resolution: OutputResolution = OutputResolution.FHD_1080P,
     val codec: VideoCodecChoice = VideoCodecChoice.H264,
+    val preset: EnhancementPreset = EnhancementPreset.NATURAL,
+    val deblockStrength: Float = 0.25f,
     val denoiseStrength: Float = 0.45f,
     val detailStrength: Float = 0.65f,
     val clarityStrength: Float = 0.25f,
+    val vibranceStrength: Float = 0.10f,
+    val muteAudio: Boolean = false,
     val cropOffsetX: Float = 0f,
     val cropOffsetY: Float = 0f,
     val trimStartMs: Long = 0L,
     val trimEndMs: Long? = null,
 ) {
+    fun withPreset(targetPreset: EnhancementPreset): ExportOptions = when (targetPreset) {
+        EnhancementPreset.NATURAL -> copy(
+            preset = EnhancementPreset.NATURAL,
+            deblockStrength = 0.25f,
+            denoiseStrength = 0.45f,
+            detailStrength = 0.65f,
+            clarityStrength = 0.25f,
+            vibranceStrength = 0.10f,
+        )
+        EnhancementPreset.CRISP_TEXT -> copy(
+            preset = EnhancementPreset.CRISP_TEXT,
+            deblockStrength = 0.20f,
+            denoiseStrength = 0.20f,
+            detailStrength = 0.85f,
+            clarityStrength = 0.35f,
+            vibranceStrength = 0.05f,
+        )
+        EnhancementPreset.LOW_LIGHT -> copy(
+            preset = EnhancementPreset.LOW_LIGHT,
+            deblockStrength = 0.45f,
+            denoiseStrength = 0.75f,
+            detailStrength = 0.45f,
+            clarityStrength = 0.25f,
+            vibranceStrength = 0.15f,
+        )
+        EnhancementPreset.CINEMA -> copy(
+            preset = EnhancementPreset.CINEMA,
+            deblockStrength = 0.15f,
+            denoiseStrength = 0.30f,
+            detailStrength = 0.55f,
+            clarityStrength = 0.40f,
+            vibranceStrength = 0.22f,
+        )
+        EnhancementPreset.CUSTOM -> copy(preset = EnhancementPreset.CUSTOM)
+    }
+
     fun normalizedForPlatform(capabilities: DeviceCapabilities): ExportOptions {
         val validFormats = allowedFormats(platform)
         val nextFormat = if (postFormat in validFormats) postFormat else validFormats.first()
@@ -91,9 +164,10 @@ data class ExportOptions(
         } else {
             resolution
         }
+        val canUseHevc = capabilities.supportsHevcFor(nextRes)
         val nextCodec = if (nextRes == OutputResolution.UHD_4K && !capabilities.supports4kH264 && capabilities.supports4kHevc) {
             VideoCodecChoice.HEVC
-        } else if (codec == VideoCodecChoice.HEVC && !capabilities.supports4kHevc) {
+        } else if (codec == VideoCodecChoice.HEVC && !canUseHevc) {
             VideoCodecChoice.H264
         } else {
             codec
@@ -102,9 +176,11 @@ data class ExportOptions(
             postFormat = nextFormat,
             resolution = nextRes,
             codec = nextCodec,
+            deblockStrength = deblockStrength.coerceIn(0f, 1f),
             denoiseStrength = denoiseStrength.coerceIn(0f, 1f),
             detailStrength = detailStrength.coerceIn(0f, 1f),
             clarityStrength = clarityStrength.coerceIn(0f, 1f),
+            vibranceStrength = vibranceStrength.coerceIn(0f, 1f),
             cropOffsetX = cropOffsetX.coerceIn(-1f, 1f),
             cropOffsetY = cropOffsetY.coerceIn(-1f, 1f),
         )
@@ -144,13 +220,14 @@ data class ExportPlan(
     val bitrateBps: Int,
     val useHevc: Boolean,
     val toneMapHdrToSdr: Boolean,
+    val muteAudio: Boolean,
     val trimStartMs: Long,
     val trimEndMs: Long,
     val effectiveDurationMs: Long,
     val cropRect: NormalizedCropRect?,
 ) {
     val estimatedBytes: Long
-        get() = ((bitrateBps.toLong() + 192_000L) * effectiveDurationMs) / 8_000L
+        get() = ((bitrateBps.toLong() + if (muteAudio) 0L else 192_000L) * effectiveDurationMs) / 8_000L
 }
 
 sealed interface ExportState {
@@ -180,7 +257,7 @@ sealed interface ExportState {
     ) : ExportState
 
     data object Cancelled : ExportState
-    data class Failed(val message: String) : ExportState
+    data class Failed(val error: AppError) : ExportState
 }
 
 object ExportPlanCalculator {
@@ -190,7 +267,9 @@ object ExportPlanCalculator {
         capabilities: DeviceCapabilities,
     ): Result<ExportPlan> {
         if (source.displayWidth <= 0 || source.displayHeight <= 0 || source.durationMs <= 0L) {
-            return Result.failure(IllegalArgumentException("Invalid source video dimensions or duration."))
+            return Result.failure(
+                LocalizedExportException(AppError.InvalidSourceVideo, "Invalid source video dimensions or duration."),
+            )
         }
         val options = rawOptions.normalizedForPlatform(capabilities)
         val (width, height) = targetDimensions(options.postFormat, options.resolution)
@@ -201,7 +280,7 @@ object ExportPlanCalculator {
         val effectiveDuration = (trimEnd - trimStart).coerceAtLeast(1L)
 
         val useHevc = options.codec == VideoCodecChoice.HEVC &&
-            (options.resolution == OutputResolution.FHD_1080P || capabilities.supports4kHevc)
+            capabilities.supportsHevcFor(options.resolution)
         val bitrate = computeBitrate(options.resolution, options.quality, useHevc)
 
         val cropRect = if (options.framing == FramingMode.COVER) {
@@ -223,6 +302,7 @@ object ExportPlanCalculator {
             bitrateBps = bitrate,
             useHevc = useHevc,
             toneMapHdrToSdr = source.isHdr,
+            muteAudio = options.muteAudio || !source.hasAudio,
             trimStartMs = trimStart,
             trimEndMs = trimEnd,
             effectiveDurationMs = effectiveDuration,
@@ -231,9 +311,35 @@ object ExportPlanCalculator {
 
         val requiredBytes = (plan.estimatedBytes * 1.6).toLong() + 32L * 1024L * 1024L
         if (capabilities.freeStorageBytes < requiredBytes) {
-            return Result.failure(IllegalStateException("Insufficient free storage for export."))
+            val reqMb = (requiredBytes / (1024L * 1024L)).coerceAtLeast(1L)
+            val availMb = (capabilities.freeStorageBytes / (1024L * 1024L)).coerceAtLeast(0L)
+            return Result.failure(
+                LocalizedExportException(
+                    AppError.InsufficientStorage(reqMb, availMb),
+                    "Insufficient free storage for export.",
+                ),
+            )
         }
         return Result.success(plan)
+    }
+
+    fun buildSmartOutputName(sourceName: String, options: ExportOptions): String {
+        val base = sourceName
+            .substringBeforeLast('.')
+            .replace(Regex("[^A-Za-z0-9\\u0600-\\u06FF_-]+"), "_")
+            .trim('_')
+            .take(28)
+            .ifBlank { "Video" }
+        val plat = when (options.platform) {
+            PlatformPreset.INSTAGRAM -> "IG"
+            PlatformPreset.TIKTOK -> "TT"
+            PlatformPreset.YOUTUBE -> "YT"
+            PlatformPreset.FACEBOOK -> "FB"
+        }
+        val fmt = options.postFormat.name.lowercase().replaceFirstChar { it.uppercase() }
+        val res = options.resolution.label
+        val suffix = (System.currentTimeMillis() / 1000L) % 10_000L
+        return "UPSCALE_${base}_${plat}_${fmt}_${res}_$suffix.mp4"
     }
 
     fun targetDimensions(format: PostFormat, resolution: OutputResolution): Pair<Int, Int> {

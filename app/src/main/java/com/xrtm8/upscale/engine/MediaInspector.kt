@@ -8,6 +8,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Environment
 import android.os.PowerManager
 import android.os.StatFs
 import android.provider.MediaStore
@@ -129,6 +130,7 @@ object MediaInspector {
         val hevcEncoders = codecs.filter { it.isEncoder && MimeTypes.VIDEO_H265 in it.supportedTypes }
 
         val supports1080pH264 = h264Encoders.any { supportsSize(it, MimeTypes.VIDEO_H264, 1080, 1920) }
+        val supports1080pHevc = hevcEncoders.any { supportsSize(it, MimeTypes.VIDEO_H265, 1080, 1920) }
         val supports4kH264 = h264Encoders.any { supportsSize(it, MimeTypes.VIDEO_H264, 2160, 3840) }
         val supports4kHevc = hevcEncoders.any { supportsSize(it, MimeTypes.VIDEO_H265, 2160, 3840) }
 
@@ -136,16 +138,23 @@ object MediaInspector {
             context.getSystemService(PowerManager::class.java)?.currentThermalStatus ?: 0
         }.getOrDefault(0)
 
-        val freeBytes = runCatching {
+        val cacheFree = runCatching {
             StatFs(context.cacheDir.absolutePath).availableBytes
+        }.getOrDefault(Long.MAX_VALUE)
+
+        val externalFree = runCatching {
+            val moviesDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+                ?: Environment.getExternalStorageDirectory()
+            StatFs(moviesDir.absolutePath).availableBytes
         }.getOrDefault(Long.MAX_VALUE)
 
         return DeviceCapabilities(
             supports1080pH264 = supports1080pH264,
+            supports1080pHevc = supports1080pHevc,
             supports4kH264 = supports4kH264,
             supports4kHevc = supports4kHevc,
             thermalStatus = thermal,
-            freeStorageBytes = freeBytes,
+            freeStorageBytes = minOf(cacheFree, externalFree),
         )
     }
 
@@ -160,7 +169,10 @@ object MediaInspector {
             videoCaps?.isSizeSupported(height, width) == true
     }.getOrDefault(false)
 
-    fun queryLatestExport(context: Context): RecentExportItem? = runCatching {
+    fun queryLatestExport(context: Context): RecentExportItem? = queryRecentExports(context, limit = 1).firstOrNull()
+
+    fun queryRecentExports(context: Context, limit: Int = 8): List<RecentExportItem> = runCatching {
+        val results = mutableListOf<RecentExportItem>()
         val projection = arrayOf(
             MediaStore.Video.Media._ID,
             MediaStore.Video.Media.DISPLAY_NAME,
@@ -179,7 +191,7 @@ object MediaInspector {
             args,
             sortOrder,
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
+            while (cursor.moveToNext() && results.size < limit) {
                 val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID))
                 val name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)) ?: "UPSCALE.mp4"
                 val w = cursor.getInt(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH))
@@ -187,17 +199,18 @@ object MediaInspector {
                 val dur = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION))
                 val size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE))
                 val uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
-                RecentExportItem(
-                    uriString = uri.toString(),
-                    name = name,
-                    width = w,
-                    height = h,
-                    durationMs = dur,
-                    sizeBytes = size,
-                )
-            } else {
-                null
+                if (size > 0L) {
+                    results += RecentExportItem(
+                        uriString = uri.toString(),
+                        name = name,
+                        width = w,
+                        height = h,
+                        durationMs = dur,
+                        sizeBytes = size,
+                    )
+                }
             }
         }
-    }.getOrNull()
+        results
+    }.getOrDefault(emptyList())
 }

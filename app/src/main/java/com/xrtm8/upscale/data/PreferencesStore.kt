@@ -2,6 +2,7 @@ package com.xrtm8.upscale.data
 
 import android.content.Context
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.FramingMode
 import com.xrtm8.upscale.model.OutputResolution
@@ -47,9 +48,13 @@ class PreferencesStore(context: Context) {
         framing = enumValueOrDefault(prefs.getString("framing", null), FramingMode.CONTAIN),
         resolution = enumValueOrDefault(prefs.getString("resolution", null), OutputResolution.FHD_1080P),
         codec = enumValueOrDefault(prefs.getString("codec", null), VideoCodecChoice.H264),
+        preset = enumValueOrDefault(prefs.getString("preset", null), EnhancementPreset.NATURAL),
+        deblockStrength = prefs.getFloat("deblockStrength", 0.25f).coerceIn(0f, 1f),
         denoiseStrength = prefs.getFloat("denoiseStrength", 0.45f).coerceIn(0f, 1f),
         detailStrength = prefs.getFloat("detailStrength", 0.65f).coerceIn(0f, 1f),
         clarityStrength = prefs.getFloat("clarityStrength", 0.25f).coerceIn(0f, 1f),
+        vibranceStrength = prefs.getFloat("vibranceStrength", 0.10f).coerceIn(0f, 1f),
+        muteAudio = prefs.getBoolean("muteAudio", false),
     )
 
     fun saveOptions(options: ExportOptions) {
@@ -60,9 +65,13 @@ class PreferencesStore(context: Context) {
             .putString("framing", options.framing.name)
             .putString("resolution", options.resolution.name)
             .putString("codec", options.codec.name)
+            .putString("preset", options.preset.name)
+            .putFloat("deblockStrength", options.deblockStrength)
             .putFloat("denoiseStrength", options.denoiseStrength)
             .putFloat("detailStrength", options.detailStrength)
             .putFloat("clarityStrength", options.clarityStrength)
+            .putFloat("vibranceStrength", options.vibranceStrength)
+            .putBoolean("muteAudio", options.muteAudio)
             .apply()
     }
 

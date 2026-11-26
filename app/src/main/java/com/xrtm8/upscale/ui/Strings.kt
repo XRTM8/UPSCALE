@@ -1,6 +1,8 @@
 package com.xrtm8.upscale.ui
 
+import com.xrtm8.upscale.model.AppError
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.EnhancementPreset
 
 data class StudioStrings(
     val studioTitle: String,
@@ -11,17 +13,30 @@ data class StudioStrings(
     val importVideo: String,
     val replaceVideo: String,
     val enhanceAndExport: String,
+    val preparing: String,
     val processing: String,
     val output: String,
+    val exportsHistory: String,
     val compare: String,
     val safeZones: String,
     val zoom: String,
+    val saveFrame: String,
+    val snapshotSaved: String,
+    val snapshotFailed: String,
     val qualityMode: String,
     val maximum: String,
     val balanced: String,
+    val presets: String,
+    val presetNatural: String,
+    val presetCrispText: String,
+    val presetLowLight: String,
+    val presetCinema: String,
+    val presetCustom: String,
+    val deblock: String,
     val denoise: String,
     val detailCas: String,
     val clarity: String,
+    val vibrance: String,
     val resetFilters: String,
     val platform: String,
     val postType: String,
@@ -31,6 +46,9 @@ data class StudioStrings(
     val landscape: String,
     val resolution: String,
     val codec: String,
+    val audioTrack: String,
+    val keepAudio: String,
+    val muteAudio: String,
     val framing: String,
     val contain: String,
     val cover: String,
@@ -53,7 +71,9 @@ data class StudioStrings(
     val cancel: String,
     val shareVideo: String,
     val openInGallery: String,
+    val useAsInput: String,
     val latestExport: String,
+    val noRecentExports: String,
     val original: String,
     val result: String,
     val before: String,
@@ -61,7 +81,6 @@ data class StudioStrings(
     val done: String,
     val close: String,
     val savedToGallery: String,
-    val preparing: String,
     val updateAvailable: String,
     val updateNow: String,
     val downloadingUpdate: String,
@@ -70,29 +89,95 @@ data class StudioStrings(
     val checkingUpdate: String,
     val upToDate: String,
     val toggleTheme: String,
-)
+    val play: String,
+    val pause: String,
+    val increase: String,
+    val decrease: String,
+    val recommendUpscaleHint: String,
+    val recommendCoverHint: String,
+    val isArabic: Boolean,
+) {
+    fun presetLabel(preset: EnhancementPreset): String = when (preset) {
+        EnhancementPreset.NATURAL -> presetNatural
+        EnhancementPreset.CRISP_TEXT -> presetCrispText
+        EnhancementPreset.LOW_LIGHT -> presetLowLight
+        EnhancementPreset.CINEMA -> presetCinema
+        EnhancementPreset.CUSTOM -> presetCustom
+    }
+
+    fun formatError(error: AppError): String = if (isArabic) {
+        when (error) {
+            AppError.InvalidSourceVideo -> "أبعاد أو مدة ملف الفيديو غير صالحة."
+            is AppError.InsufficientStorage ->
+                "المساحة الحرة غير كافية للتصدير (المطلوب ~${error.requiredMb} MB، المتاح ${error.availableMb} MB)."
+            is AppError.UnableToReadVideo ->
+                error.detail?.takeIf { it.isNotBlank() }?.let { "تعذر قراءة ملف الفيديو المحدد: $it" }
+                    ?: "تعذر قراءة ملف الفيديو المحدد."
+            is AppError.UnableToPrepareExport ->
+                error.detail?.takeIf { it.isNotBlank() }?.let { "تعذر بدء التصدير: $it" }
+                    ?: "تعذر تحضير التصدير على الجهاز."
+            AppError.NoVideoPlayerFound -> "لا يوجد تطبيق مشغّل فيديو متاح لفتح الملف."
+            AppError.ExportMissingAudio -> "فقد الملف المصدّر مسار الصوت أثناء التحقق."
+            AppError.ExportDurationMismatch -> "مدة الفيديو المصدّر لا تطابق المدة المحددة."
+            is AppError.ExportDimensionMismatch ->
+                "أبعاد المرمّز (\u2066${error.actualWidth}×${error.actualHeight}\u2069) لا تطابق المطلوب (\u2066${error.expectedWidth}×${error.expectedHeight}\u2069)."
+            is AppError.GenericFailure -> error.detail
+        }
+    } else {
+        when (error) {
+            AppError.InvalidSourceVideo -> "Invalid source video dimensions or duration."
+            is AppError.InsufficientStorage ->
+                "Insufficient free storage for export (need ~${error.requiredMb} MB, available ${error.availableMb} MB)."
+            is AppError.UnableToReadVideo ->
+                error.detail?.takeIf { it.isNotBlank() }?.let { "Unable to read the selected video: $it" }
+                    ?: "Unable to read the selected video."
+            is AppError.UnableToPrepareExport ->
+                error.detail?.takeIf { it.isNotBlank() }?.let { "Unable to start export: $it" }
+                    ?: "Unable to prepare export."
+            AppError.NoVideoPlayerFound -> "No video player app found to open the file."
+            AppError.ExportMissingAudio -> "Exported video is missing its audio track."
+            AppError.ExportDurationMismatch -> "Exported duration does not match the selected range."
+            is AppError.ExportDimensionMismatch ->
+                "Encoder returned ${error.actualWidth}×${error.actualHeight} instead of ${error.expectedWidth}×${error.expectedHeight}."
+            is AppError.GenericFailure -> error.detail
+        }
+    }
+}
 
 fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLanguage.AR) {
     StudioStrings(
         studioTitle = "استوديو الفيديو المحلي",
         heroTitle = "مشروع فيديو جديد",
-        heroSubtitle = "تنظيف الضوضاء، تعزيز الوضوح، وتجهيز المقاسات للمنصات محلياً على جهازك",
+        heroSubtitle = "تنظيف الضوضاء، إزالة التكتل، وتعزيز التفاصيل وتجهيز المقاسات محلياً على جهازك",
         noVideoLoaded = "لا يوجد فيديو",
         chooseVideo = "اختيار فيديو",
         importVideo = "استيراد فيديو",
         replaceVideo = "تغيير",
         enhanceAndExport = "تحسين وتصدير",
+        preparing = "جارٍ التحضير…",
         processing = "المعالجة",
         output = "الإخراج",
+        exportsHistory = "التصديرات",
         compare = "مقارنة",
         safeZones = "الأمان",
         zoom = "تكبير",
+        saveFrame = "لقطة",
+        snapshotSaved = "حُفظت اللقطة في Pictures/UPSCALE",
+        snapshotFailed = "تعذر التقاط إطار المعاينة",
         qualityMode = "وضع الجودة",
-        maximum = "الجودة القصوى",
-        balanced = "متوازن",
+        maximum = "الجودة القصوى (18M)",
+        balanced = "متوازن (10M)",
+        presets = "أوضاع جاهزة",
+        presetNatural = "طبيعي",
+        presetCrispText = "نصوص وشاشة",
+        presetLowLight = "ليلي",
+        presetCinema = "سينمائي",
+        presetCustom = "مخصص",
+        deblock = "إزالة آثار الضغط",
         denoise = "تنظيف الضوضاء",
         detailCas = "تعزيز التفاصيل",
         clarity = "وضوح التباين",
+        vibrance = "حيوية الألوان",
         resetFilters = "إعادة ضبط",
         platform = "المنصة",
         postType = "نوع المنشور",
@@ -102,6 +187,9 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         landscape = "أفقي 16:9",
         resolution = "دقة الإخراج",
         codec = "الترميز",
+        audioTrack = "الصوت",
+        keepAudio = "إبقاء الصوت",
+        muteAudio = "كتم الصوت",
         framing = "ملاءمة الإطار",
         contain = "كامل المقطع",
         cover = "قص لملء الإطار",
@@ -112,7 +200,7 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         fullLength = "الكل",
         estimatedSize = "الحجم التقديري",
         localNote = "معالجة محلية كاملة على جهازك",
-        gpuEngineNote = "شادر OpenGL ES فوري (تنظيف، حدة CAS، وضوح) + ترميز Media3 المسرّع.",
+        gpuEngineNote = "شادر OpenGL ES عند الدقة المستهدفة (فك تكتل، تنظيف، حدة CAS، وضوح، حيوية) + ترميز Media3.",
         hdrToneMapNote = "ملف HDR: سيتم تحويل ألوانه تلقائياً إلى SDR عبر OpenGL.",
         thermalWarning = "حرارة الجهاز مرتفعة؛ قد تنخفض سرعة التصدير لحماية الهاتف.",
         fourKUnavailable = "دقة 4K غير مدعومة في مرمّز هذا الجهاز أو مقيّدة لهذه المنصة.",
@@ -124,7 +212,9 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         cancel = "إلغاء",
         shareVideo = "مشاركة",
         openInGallery = "عرض",
+        useAsInput = "تحرير",
         latestExport = "آخر تصدير",
+        noRecentExports = "لا توجد تصديرات محفوظة بعد في Movies/UPSCALE",
         original = "الأصل",
         result = "النتيجة",
         before = "قبل",
@@ -132,7 +222,6 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         done = "تم",
         close = "إغلاق",
         savedToGallery = "حُفظ في Movies/UPSCALE",
-        preparing = "جارٍ التحضير…",
         updateAvailable = "تحديث جديد متاح",
         updateNow = "تحديث",
         downloadingUpdate = "جارٍ تنزيل التحديث",
@@ -141,28 +230,48 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         checkingUpdate = "جارٍ فحص التحديثات…",
         upToDate = "لديك أحدث إصدار",
         toggleTheme = "تبديل المظهر",
+        play = "تشغيل",
+        pause = "إيقاف مؤقت",
+        increase = "زيادة",
+        decrease = "تقليل",
+        recommendUpscaleHint = "سيتم ترقية الدقة تلقائياً إلى 1080p",
+        recommendCoverHint = "نصيحة: جرّب «قص لملء الإطار» لملء شاشة الريل",
+        isArabic = true,
     )
 } else {
     StudioStrings(
         studioTitle = "Local Video Studio",
         heroTitle = "New Video Project",
-        heroSubtitle = "Noise cleanup, detail clarity, and platform framing — locally on your device",
+        heroSubtitle = "Deblocking, noise cleanup, detail clarity, and platform framing — locally on your device",
         noVideoLoaded = "No video loaded",
         chooseVideo = "Choose video",
         importVideo = "Import video",
         replaceVideo = "Change",
         enhanceAndExport = "Enhance & export",
+        preparing = "Preparing…",
         processing = "Processing",
         output = "Output",
+        exportsHistory = "Exports",
         compare = "Compare",
         safeZones = "Safe",
         zoom = "Zoom",
+        saveFrame = "Frame",
+        snapshotSaved = "Snapshot saved to Pictures/UPSCALE",
+        snapshotFailed = "Could not capture preview frame",
         qualityMode = "Quality mode",
-        maximum = "Maximum",
-        balanced = "Balanced",
+        maximum = "Maximum (18M)",
+        balanced = "Balanced (10M)",
+        presets = "Presets",
+        presetNatural = "Natural",
+        presetCrispText = "Crisp text",
+        presetLowLight = "Low-light",
+        presetCinema = "Cinema",
+        presetCustom = "Custom",
+        deblock = "Compression deblock",
         denoise = "Noise cleanup",
         detailCas = "Detail sharpness",
         clarity = "Micro-clarity",
+        vibrance = "Color vibrance",
         resetFilters = "Reset",
         platform = "Platform",
         postType = "Post format",
@@ -172,6 +281,9 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         landscape = "Landscape 16:9",
         resolution = "Resolution",
         codec = "Codec",
+        audioTrack = "Audio",
+        keepAudio = "Keep audio",
+        muteAudio = "Mute audio",
         framing = "Framing",
         contain = "Fit frame",
         cover = "Crop to fill",
@@ -182,7 +294,7 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         fullLength = "Full",
         estimatedSize = "Estimated size",
         localNote = "100% local on-device processing",
-        gpuEngineNote = "Real-time OpenGL ES shaders (denoise, CAS detail, clarity) + Media3 encoder.",
+        gpuEngineNote = "Target-resolution OpenGL ES shaders (deblock, denoise, CAS detail, clarity, vibrance) + Media3 encoder.",
         hdrToneMapNote = "HDR source detected: automatic OpenGL HDR-to-SDR tone mapping enabled.",
         thermalWarning = "Device temperature is high; export speed may throttle.",
         fourKUnavailable = "4K is unavailable for this platform or device hardware encoder.",
@@ -194,7 +306,9 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         cancel = "Cancel",
         shareVideo = "Share",
         openInGallery = "View",
+        useAsInput = "Edit",
         latestExport = "Latest export",
+        noRecentExports = "No exports saved in Movies/UPSCALE yet",
         original = "Original",
         result = "Result",
         before = "Before",
@@ -202,7 +316,6 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         done = "Done",
         close = "Close",
         savedToGallery = "Saved to Movies/UPSCALE",
-        preparing = "Preparing…",
         updateAvailable = "Update available",
         updateNow = "Update",
         downloadingUpdate = "Downloading update",
@@ -211,5 +324,12 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         checkingUpdate = "Checking for updates…",
         upToDate = "You're on the latest version",
         toggleTheme = "Switch theme",
+        play = "Play",
+        pause = "Pause",
+        increase = "Increase",
+        decrease = "Decrease",
+        recommendUpscaleHint = "Source will be upscaled to 1080p",
+        recommendCoverHint = "Tip: try Crop to fill for full-screen Reels",
+        isArabic = false,
     )
 }

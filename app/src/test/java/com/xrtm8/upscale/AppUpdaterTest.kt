@@ -8,21 +8,27 @@ import org.junit.Test
 
 class AppUpdaterTest {
 
-    private fun sampleReleaseJson(tag: String = "v0.6.0") = """
+    private fun sampleReleaseJson(tag: String = "v0.8.0") = """
         {
           "tag_name": "$tag",
+          "body": "### Release notes\n- Smoother preview\n- Deblock & vibrance",
           "assets": [
             {
-              "name": "UPSCALE-Studio-0.6.0-android-arm64-v8a.apk",
+              "name": "UPSCALE-Studio-0.8.0-android-arm64-v8a.apk",
               "size": 4500000,
               "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "browser_download_url": "https://github.com/XRTM8/UPSCALE/releases/download/$tag/UPSCALE-Studio-0.6.0-android-arm64-v8a.apk"
+              "browser_download_url": "https://github.com/XRTM8/UPSCALE/releases/download/$tag/UPSCALE-Studio-0.8.0-android-arm64-v8a.apk"
             },
             {
-              "name": "UPSCALE-Studio-0.6.0-android-universal.apk",
+              "name": "UPSCALE-Studio-0.8.0-android-universal.apk",
               "size": 4900000,
               "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "browser_download_url": "https://github.com/XRTM8/UPSCALE/releases/download/$tag/UPSCALE-Studio-0.6.0-android-universal.apk"
+              "browser_download_url": "https://github.com/XRTM8/UPSCALE/releases/download/$tag/UPSCALE-Studio-0.8.0-android-universal.apk"
+            },
+            {
+              "name": "SHA256SUMS.txt",
+              "size": 256,
+              "browser_download_url": "https://github.com/XRTM8/UPSCALE/releases/download/$tag/SHA256SUMS.txt"
             }
           ]
         }
@@ -38,20 +44,42 @@ class AppUpdaterTest {
 
     @Test
     fun selectsArm64ApkOnArm64DevicesAndUniversalOtherwise() {
-        val arm64 = AppUpdater.selectBestAsset(sampleReleaseJson(), listOf("arm64-v8a", "armeabi-v7a"), 5000L)
+        val arm64 = AppUpdater.selectBestAsset(sampleReleaseJson(), listOf("arm64-v8a", "armeabi-v7a"), 7000L)
         assertNotNull(arm64)
-        assertEquals("UPSCALE-Studio-0.6.0-android-arm64-v8a.apk", arm64!!.assetName)
-        assertEquals(6000L, arm64.versionCode)
+        assertEquals("UPSCALE-Studio-0.8.0-android-arm64-v8a.apk", arm64!!.assetName)
+        assertEquals(8000L, arm64.versionCode)
+        assertEquals(
+            "https://github.com/XRTM8/UPSCALE/releases/download/v0.8.0/SHA256SUMS.txt",
+            arm64.checksumUrl,
+        )
+        assertEquals("### Release notes\n- Smoother preview\n- Deblock & vibrance", arm64.releaseNotes)
 
-        val x86 = AppUpdater.selectBestAsset(sampleReleaseJson(), listOf("x86_64", "x86"), 5000L)
+        val x86 = AppUpdater.selectBestAsset(sampleReleaseJson(), listOf("x86_64", "x86"), 7000L)
         assertNotNull(x86)
-        assertEquals("UPSCALE-Studio-0.6.0-android-universal.apk", x86!!.assetName)
+        assertEquals("UPSCALE-Studio-0.8.0-android-universal.apk", x86!!.assetName)
+    }
+
+    @Test
+    fun parsesSha256FromSumsFile() {
+        val sums = """
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  UPSCALE-Studio-0.8.0-android-arm64-v8a.apk
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *UPSCALE-Studio-0.8.0-android-universal.apk
+        """.trimIndent()
+        assertEquals(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            AppUpdater.parseSha256FromSums(sums, "UPSCALE-Studio-0.8.0-android-arm64-v8a.apk"),
+        )
+        assertEquals(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            AppUpdater.parseSha256FromSums(sums, "UPSCALE-Studio-0.8.0-android-universal.apk"),
+        )
+        assertNull(AppUpdater.parseSha256FromSums(sums, "other.apk"))
     }
 
     @Test
     fun ignoresSameOrOlderVersions() {
-        assertNull(AppUpdater.selectBestAsset(sampleReleaseJson("v0.5.0"), listOf("arm64-v8a"), 5000L))
-        assertNull(AppUpdater.selectBestAsset(sampleReleaseJson("v0.4.0"), listOf("arm64-v8a"), 5000L))
+        assertNull(AppUpdater.selectBestAsset(sampleReleaseJson("v0.7.0"), listOf("arm64-v8a"), 7000L))
+        assertNull(AppUpdater.selectBestAsset(sampleReleaseJson("v0.4.0"), listOf("arm64-v8a"), 7000L))
     }
 
     @Test

@@ -48,6 +48,8 @@ fun StudioSlider(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     step: Float = 0.05f,
+    decreaseDescription: String? = null,
+    increaseDescription: String? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     val isAmoledWhite = LocalAmoledWhite.current
@@ -85,16 +87,16 @@ fun StudioSlider(
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(surfaceColor)
-                    .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
+                    .border(0.5.dp, borderColor, RoundedCornerShape(10.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(26.dp)
                         .clip(CircleShape)
                         .clickable {
                             val next = (value - step).coerceIn(0f, 1f)
@@ -105,9 +107,9 @@ fun StudioSlider(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Remove,
-                        contentDescription = null,
+                        contentDescription = decreaseDescription?.let { "$it $title" },
                         tint = if (value > 0.001f) secondaryText else subtleIcon,
-                        modifier = Modifier.size(12.dp),
+                        modifier = Modifier.size(13.dp),
                     )
                 }
 
@@ -121,7 +123,7 @@ fun StudioSlider(
 
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(26.dp)
                         .clip(CircleShape)
                         .clickable {
                             val next = (value + step).coerceIn(0f, 1f)
@@ -132,9 +134,9 @@ fun StudioSlider(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = null,
+                        contentDescription = increaseDescription?.let { "$it $title" },
                         tint = if (value < 0.999f) secondaryText else subtleIcon,
-                        modifier = Modifier.size(12.dp),
+                        modifier = Modifier.size(13.dp),
                     )
                 }
             }

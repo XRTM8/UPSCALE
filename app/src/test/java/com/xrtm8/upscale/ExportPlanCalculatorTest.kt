@@ -1,6 +1,8 @@
 package com.xrtm8.upscale
 
+import com.xrtm8.upscale.engine.ExportRepository
 import com.xrtm8.upscale.model.DeviceCapabilities
+import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlanCalculator
 import com.xrtm8.upscale.model.FramingMode
@@ -11,6 +13,7 @@ import com.xrtm8.upscale.model.QualityMode
 import com.xrtm8.upscale.model.VideoCodecChoice
 import com.xrtm8.upscale.model.VideoMetadata
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -40,6 +43,7 @@ class ExportPlanCalculatorTest {
 
     private fun capableDevice() = DeviceCapabilities(
         supports1080pH264 = true,
+        supports1080pHevc = true,
         supports4kH264 = true,
         supports4kHevc = true,
         thermalStatus = 0,
@@ -71,6 +75,23 @@ class ExportPlanCalculatorTest {
         assertEquals(2160, plan.targetWidth)
         assertEquals(3840, plan.targetHeight)
         assertTrue(plan.useHevc)
+    }
+
+    @Test
+    fun supports1080pHevcAllowsHevcAt1080pWithout4k() {
+        val midRangeDevice = capableDevice().copy(
+            supports1080pHevc = true,
+            supports4kH264 = false,
+            supports4kHevc = false,
+        )
+        val options = ExportOptions(
+            platform = PlatformPreset.INSTAGRAM,
+            resolution = OutputResolution.FHD_1080P,
+            codec = VideoCodecChoice.HEVC,
+        )
+        val plan = ExportPlanCalculator.buildPlan(sampleVideo(), options, midRangeDevice).getOrThrow()
+        assertTrue(plan.useHevc)
+        assertEquals(1080, plan.targetWidth)
     }
 
     @Test
@@ -106,6 +127,54 @@ class ExportPlanCalculatorTest {
         val plan = ExportPlanCalculator.buildPlan(sampleVideo(), options, capableDevice()).getOrThrow()
         assertNull(plan.cropRect)
         assertEquals(5_000L, plan.effectiveDurationMs)
+    }
+
+    @Test
+    fun muteAudioReducesEstimatedSizeAndSetsPlanFlag() {
+        val withAudio = ExportPlanCalculator.buildPlan(
+            sampleVideo(),
+            ExportOptions(muteAudio = false),
+            capableDevice(),
+        ).getOrThrow()
+        val muted = ExportPlanCalculator.buildPlan(
+            sampleVideo(),
+            ExportOptions(muteAudio = true),
+            capableDevice(),
+        ).getOrThrow()
+        assertFalse(withAudio.muteAudio)
+        assertTrue(muted.muteAudio)
+        assertTrue(muted.estimatedBytes < withAudio.estimatedBytes)
+    }
+
+    @Test
+    fun enhancementPresetsConfigureDistinctFilterProfiles() {
+        val lowLight = ExportOptions().withPreset(EnhancementPreset.LOW_LIGHT)
+        assertEquals(EnhancementPreset.LOW_LIGHT, lowLight.preset)
+        assertEquals(0.75f, lowLight.denoiseStrength, 0.001f)
+
+        val crisp = ExportOptions().withPreset(EnhancementPreset.CRISP_TEXT)
+        assertEquals(0.85f, crisp.detailStrength, 0.001f)
+    }
+
+    @Test
+    fun smartOutputNameSanitizesFilenameAndIncludesPreset() {
+        val name = ExportPlanCalculator.buildSmartOutputName(
+            sourceName = "My Clip!! (2026).mp4",
+            options = ExportOptions(
+                platform = PlatformPreset.TIKTOK,
+                postFormat = PostFormat.REEL,
+                resolution = OutputResolution.FHD_1080P,
+            ),
+        )
+        assertTrue(name.startsWith("UPSCALE_My_Clip_2026_TT_Reel_1080p_"))
+        assertTrue(name.endsWith(".mp4"))
+    }
+
+    @Test
+    fun exportRepositoryAllowsMacroblockAlignmentWithin16Px() {
+        assertTrue(ExportRepository.isVerifiedDimensions(1080, 1344, 1080, 1350))
+        assertTrue(ExportRepository.isVerifiedDimensions(1080, 1350, 1080, 1350))
+        assertFalse(ExportRepository.isVerifiedDimensions(720, 1280, 1080, 1920))
     }
 
     @Test

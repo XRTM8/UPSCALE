@@ -13,12 +13,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RangeSlider
@@ -26,6 +33,11 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,8 +45,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.model.DeviceCapabilities
+import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlan
 import com.xrtm8.upscale.model.FramingMode
@@ -48,7 +63,7 @@ import com.xrtm8.upscale.ui.StudioStrings
 import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
 import com.xrtm8.upscale.ui.theme.StudioColors
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProcessingBottomSheet(
     options: ExportOptions,
@@ -56,6 +71,7 @@ fun ProcessingBottomSheet(
     capabilities: DeviceCapabilities,
     strings: StudioStrings,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
+    onApplyPreset: (EnhancementPreset) -> Unit,
     onResetFilters: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -80,7 +96,7 @@ fun ProcessingBottomSheet(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -106,6 +122,34 @@ fun ProcessingBottomSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(strings.presets, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf(
+                        EnhancementPreset.NATURAL,
+                        EnhancementPreset.CRISP_TEXT,
+                        EnhancementPreset.LOW_LIGHT,
+                        EnhancementPreset.CINEMA,
+                    ).forEach { preset ->
+                        ChoiceChip(
+                            label = strings.presetLabel(preset),
+                            selected = options.preset == preset,
+                            onClick = { onApplyPreset(preset) },
+                        )
+                    }
+                    if (options.preset == EnhancementPreset.CUSTOM) {
+                        ChoiceChip(
+                            label = strings.presetCustom,
+                            selected = true,
+                            onClick = {},
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(strings.qualityMode, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     ChoiceChip(
@@ -124,19 +168,49 @@ fun ProcessingBottomSheet(
             }
 
             StudioSlider(
+                title = strings.deblock,
+                value = options.deblockStrength,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, deblockStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
+            StudioSlider(
                 title = strings.denoise,
                 value = options.denoiseStrength,
-                onValueChange = { v -> onUpdateOptions { it.copy(denoiseStrength = v) } },
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, denoiseStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
             )
             StudioSlider(
                 title = strings.detailCas,
                 value = options.detailStrength,
-                onValueChange = { v -> onUpdateOptions { it.copy(detailStrength = v) } },
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, detailStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
             )
             StudioSlider(
                 title = strings.clarity,
                 value = options.clarityStrength,
-                onValueChange = { v -> onUpdateOptions { it.copy(clarityStrength = v) } },
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, clarityStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
+            StudioSlider(
+                title = strings.vibrance,
+                value = options.vibranceStrength,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, vibranceStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
             )
 
             Text(
@@ -258,6 +332,7 @@ fun OutputBottomSheet(
 
             val allow4k = capabilities.supports4k &&
                 options.platform !in setOf(PlatformPreset.INSTAGRAM, PlatformPreset.FACEBOOK)
+            val allowHevc = capabilities.supportsHevcFor(options.resolution)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                     Text(strings.resolution, style = MaterialTheme.typography.bodySmall, color = secondaryText)
@@ -290,7 +365,7 @@ fun OutputBottomSheet(
                         ChoiceChip(
                             label = "HEVC",
                             selected = options.codec == VideoCodecChoice.HEVC,
-                            enabled = capabilities.supports4kHevc,
+                            enabled = allowHevc,
                             onClick = { onUpdateOptions { it.copy(codec = VideoCodecChoice.HEVC) } },
                             modifier = Modifier.weight(1f),
                         )
@@ -331,11 +406,39 @@ fun OutputBottomSheet(
                 }
             }
 
+            if (source == null || source.hasAudio) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(strings.audioTrack, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ChoiceChip(
+                            label = strings.keepAudio,
+                            selected = !options.muteAudio,
+                            onClick = { onUpdateOptions { it.copy(muteAudio = false) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                        ChoiceChip(
+                            label = strings.muteAudio,
+                            selected = options.muteAudio,
+                            onClick = { onUpdateOptions { it.copy(muteAudio = true) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+
             if (source != null && source.durationMs > 1_000L) {
                 val totalMs = source.durationMs.toFloat()
-                val startMs = options.trimStartMs.coerceIn(0L, source.durationMs - 500L)
-                val endMs = (options.trimEndMs ?: source.durationMs).coerceIn(startMs + 500L, source.durationMs)
-                val isShortTest = startMs == 0L && endMs <= 5_200L && source.durationMs > 6_000L
+                val committedStart = options.trimStartMs.coerceIn(0L, source.durationMs - 500L)
+                val committedEnd = (options.trimEndMs ?: source.durationMs).coerceIn(committedStart + 500L, source.durationMs)
+                var draftStartMs by remember(source.uriString, committedStart) { mutableLongStateOf(committedStart) }
+                var draftEndMs by remember(source.uriString, committedEnd) { mutableLongStateOf(committedEnd) }
+
+                LaunchedEffect(committedStart, committedEnd) {
+                    draftStartMs = committedStart
+                    draftEndMs = committedEnd
+                }
+
+                val isShortTest = draftStartMs == 0L && draftEndMs <= 5_200L && source.durationMs > 6_000L
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(
@@ -355,12 +458,12 @@ fun OutputBottomSheet(
                                         .background(StudioColors.BurgundyMuted)
                                         .border(0.5.dp, borderColor, RoundedCornerShape(7.dp))
                                         .clickable {
+                                            val nextStart = 0L
+                                            val nextEnd = if (isShortTest) source.durationMs else 5_000L
+                                            draftStartMs = nextStart
+                                            draftEndMs = nextEnd
                                             onUpdateOptions {
-                                                if (isShortTest) {
-                                                    it.copy(trimStartMs = 0L, trimEndMs = source.durationMs)
-                                                } else {
-                                                    it.copy(trimStartMs = 0L, trimEndMs = 5_000L)
-                                                }
+                                                it.copy(trimStartMs = nextStart, trimEndMs = nextEnd)
                                             }
                                         }
                                         .padding(horizontal = 8.dp, vertical = 3.dp),
@@ -374,7 +477,7 @@ fun OutputBottomSheet(
                                 }
                             }
                             Text(
-                                text = "\u2066${formatMs(startMs)} – ${formatMs(endMs)}\u2069",
+                                text = "\u2066${formatMs(draftStartMs)} – ${formatMs(draftEndMs)} (${formatMs(draftEndMs - draftStartMs)})\u2069",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = accentText,
                                 fontWeight = FontWeight.Bold,
@@ -382,12 +485,16 @@ fun OutputBottomSheet(
                         }
                     }
                     RangeSlider(
-                        value = startMs.toFloat()..endMs.toFloat(),
+                        value = draftStartMs.toFloat()..draftEndMs.toFloat(),
                         valueRange = 0f..totalMs,
                         onValueChange = { range ->
                             val newStart = range.start.toLong().coerceIn(0L, source.durationMs - 500L)
                             val newEnd = range.endInclusive.toLong().coerceIn(newStart + 500L, source.durationMs)
-                            onUpdateOptions { it.copy(trimStartMs = newStart, trimEndMs = newEnd) }
+                            draftStartMs = newStart
+                            draftEndMs = newEnd
+                        },
+                        onValueChangeFinished = {
+                            onUpdateOptions { it.copy(trimStartMs = draftStartMs, trimEndMs = draftEndMs) }
                         },
                         colors = SliderDefaults.colors(
                             thumbColor = accentFill,
@@ -426,6 +533,126 @@ fun OutputBottomSheet(
                     .height(44.dp),
             ) {
                 Text(strings.done, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RecentExportsBottomSheet(
+    items: List<RecentExportItem>,
+    strings: StudioStrings,
+    onOpen: (RecentExportItem) -> Unit,
+    onShare: (RecentExportItem) -> Unit,
+    onImport: (RecentExportItem) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isAmoledWhite = LocalAmoledWhite.current
+    val sheetBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
+    val itemBg = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated
+    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
+    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val borderColor = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = sheetBg,
+        contentColor = primaryText,
+        scrimColor = Color(0x99000000),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(strings.exportsHistory, style = MaterialTheme.typography.titleMedium)
+
+            if (items.isEmpty()) {
+                Text(
+                    text = strings.noRecentExports,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryText,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            } else {
+                items.forEach { item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(itemBg)
+                            .border(0.5.dp, borderColor, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = primaryText,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "\u2066${item.width}×${item.height} · ${formatMs(item.durationMs)} · ${formatSizeMb(item.sizeBytes)}\u2069",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = secondaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            IconButton(onClick = { onImport(item) }, modifier = Modifier.size(34.dp)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Edit,
+                                    contentDescription = strings.useAsInput,
+                                    tint = secondaryText,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                            IconButton(onClick = { onOpen(item) }, modifier = Modifier.size(34.dp)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.OpenInNew,
+                                    contentDescription = strings.openInGallery,
+                                    tint = primaryText,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                            IconButton(onClick = { onShare(item) }, modifier = Modifier.size(34.dp)) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = strings.shareVideo,
+                                    tint = accentText,
+                                    modifier = Modifier.size(17.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accentFill,
+                    contentColor = StudioColors.PureWhite,
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+            ) {
+                Text(strings.close, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.height(12.dp))
         }

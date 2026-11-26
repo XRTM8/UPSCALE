@@ -3,6 +3,7 @@ package com.xrtm8.upscale.ui
 import android.app.Application
 import android.content.ClipData
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,14 +15,18 @@ import com.xrtm8.upscale.engine.LiveShaderParams
 import com.xrtm8.upscale.engine.MediaInspector
 import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
+import com.xrtm8.upscale.model.AppError
 import com.xrtm8.upscale.model.AppLanguage
 import com.xrtm8.upscale.model.DeviceCapabilities
+import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlan
 import com.xrtm8.upscale.model.ExportPlanCalculator
 import com.xrtm8.upscale.model.ExportState
+import com.xrtm8.upscale.model.LocalizedExportException
 import com.xrtm8.upscale.model.VideoMetadata
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +39,12 @@ enum class StudioSheet {
     NONE,
     PROCESSING,
     OUTPUT,
+    EXPORTS,
+}
+
+enum class SnapshotStatus {
+    SAVED,
+    FAILED,
 }
 
 data class StudioUiState(
@@ -50,11 +61,15 @@ data class StudioUiState(
     val previewZoom: Float = 1f,
     val showResultPreview: Boolean = false,
     val isImporting: Boolean = false,
-    val errorMessage: String? = null,
-    val recentExport: RecentExportItem? = null,
+    val error: AppError? = null,
+    val snapshotStatus: SnapshotStatus? = null,
+    val recentExports: List<RecentExportItem> = emptyList(),
     val updateStatus: UpdateStatus = UpdateStatus.Idle,
     val updateBannerVisible: Boolean = false,
 ) {
+    val recentExport: RecentExportItem?
+        get() = recentExports.firstOrNull()
+
     val isExportRunning: Boolean
         get() = exportState is ExportState.Preparing || exportState is ExportState.Running
 
@@ -106,17 +121,17 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 ExportRepository.cleanupStaleCache(application)
                 AppUpdater.cleanupUpdateCache(application)
                 val caps = MediaInspector.inspectDeviceCapabilities(application)
-                val latest = MediaInspector.queryLatestExport(application)
-                caps to latest
-            }.let { (caps, latest) ->
+                val recents = MediaInspector.queryRecentExports(application)
+                caps to recents
+            }.let { (caps, recents) ->
                 _uiState.update { state ->
                     val normalized = state.options.normalizedForPlatform(caps)
                     syncShaderParams(normalized, state.splitCompareEnabled, state.splitPosition, state.showResultPreview)
-                    state.copy(capabilities = caps, options = normalized, recentExport = latest)
+                    state.copy(capabilities = caps, options = normalized, recentExports = recents)
                 }
             }
             // Quiet, non-intrusive background update check at most once every 6 hours.
-            kotlinx.coroutines.delay(1_500L)
+            delay(1_500L)
             val elapsed = System.currentTimeMillis() - prefs.lastUpdateCheckMs()
             if (elapsed >= 6L * 3600L * 1000L) {
                 checkForUpdates(manual = false)
@@ -125,10 +140,10 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             ExportRepository.state.collect { nextExportState ->
-                val latestExport = if (nextExportState is ExportState.Completed) {
-                    withContext(Dispatchers.IO) { MediaInspector.queryLatestExport(application) }
+                val recents = if (nextExportState is ExportState.Completed) {
+                    withContext(Dispatchers.IO) { MediaInspector.queryRecentExports(application) }
                 } else {
-                    _uiState.value.recentExport
+                    _uiState.value.recentExports
                 }
                 _uiState.update { state ->
                     val autoShowResult = nextExportState is ExportState.Completed &&
@@ -137,12 +152,22 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                     val next = state.copy(
                         exportState = nextExportState,
                         showResultPreview = showResult,
-                        recentExport = latestExport,
+                        recentExports = recents,
                     )
                     syncShaderParams(next.options, next.splitCompareEnabled, next.splitPosition, next.showResultPreview)
                     next
                 }
             }
+        }
+    }
+
+    fun refreshRecentExports() {
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val recents = withContext(Dispatchers.IO) {
+                MediaInspector.queryRecentExports(app)
+            }
+            _uiState.update { it.copy(recentExports = recents) }
         }
     }
 
@@ -171,7 +196,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun dismissError() {
-        _uiState.update { it.copy(errorMessage = null) }
+        _uiState.update { it.copy(error = null) }
     }
 
     fun checkForUpdates(manual: Boolean = true) {
@@ -293,14 +318,12 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(previewZoom = scale.coerceIn(1f, 3f)) }
     }
 
+    fun applyPreset(preset: EnhancementPreset) {
+        updateOptions { it.withPreset(preset) }
+    }
+
     fun resetEnhancementDefaults() {
-        updateOptions {
-            it.copy(
-                denoiseStrength = 0.45f,
-                detailStrength = 0.65f,
-                clarityStrength = 0.25f,
-            )
-        }
+        updateOptions { it.withPreset(EnhancementPreset.NATURAL) }
     }
 
     fun setShowResultPreview(showResult: Boolean) {
@@ -320,10 +343,43 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun saveSnapshot(bitmap: Bitmap) {
+        val app = getApplication<Application>()
+        val sourceName = _uiState.value.activePreviewMetadata?.name
+            ?.substringBeforeLast('.')
+            ?.replace(Regex("[^A-Za-z0-9\\u0600-\\u06FF_-]+"), "_")
+            ?.take(24)
+            ?.ifBlank { "Frame" } ?: "Frame"
+        val fileName = "UPSCALE_${sourceName}_${System.currentTimeMillis() % 100_000}.png"
+
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                try {
+                    ExportRepository.saveSnapshotBitmap(app, bitmap, fileName)
+                } finally {
+                    bitmap.recycle()
+                }
+            }
+            _uiState.update {
+                it.copy(snapshotStatus = if (saved.isSuccess) SnapshotStatus.SAVED else SnapshotStatus.FAILED)
+            }
+            delay(2_600L)
+            _uiState.update { it.copy(snapshotStatus = null) }
+        }
+    }
+
+    fun reportSnapshotFailed() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(snapshotStatus = SnapshotStatus.FAILED) }
+            delay(2_400L)
+            _uiState.update { it.copy(snapshotStatus = null) }
+        }
+    }
+
     fun importVideo(uri: Uri) {
         if (_uiState.value.isLocked) return
         val app = getApplication<Application>()
-        _uiState.update { it.copy(isImporting = true, errorMessage = null) }
+        _uiState.update { it.copy(isImporting = true, error = null) }
 
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -358,13 +414,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         showResultPreview = false,
                         activeSheet = StudioSheet.NONE,
                         isImporting = false,
+                        previewZoom = 1f,
                     )
                 }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(
                         isImporting = false,
-                        errorMessage = error.message ?: "Unable to read the selected video.",
+                        error = AppError.UnableToReadVideo(error.message),
                     )
                 }
             }
@@ -389,24 +446,31 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                         capabilities = caps,
                         activeSheet = StudioSheet.NONE,
                         showResultPreview = false,
-                        errorMessage = null,
+                        error = null,
                     )
                 }
                 ExportRepository.setState(ExportState.Preparing)
                 ExportForegroundService.start(app, source, state.options, plan)
             }.onFailure { error ->
+                val appError = (error as? LocalizedExportException)?.appError
+                    ?: AppError.UnableToPrepareExport(error.message)
                 _uiState.update {
                     it.copy(
                         capabilities = caps,
-                        errorMessage = error.message ?: "Unable to prepare export.",
+                        error = appError,
                     )
                 }
             }
         }
     }
 
+    @androidx.media3.common.util.UnstableApi
     fun cancelExport() {
-        ExportRepository.cancelActiveExport()
+        if (_uiState.value.exportState is ExportState.Preparing) {
+            ExportForegroundService.cancelPendingIfPreparing()
+        } else {
+            ExportRepository.cancelActiveExport()
+        }
     }
 
     fun shareCompletedOutput() {
@@ -442,7 +506,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         }
         runCatching { app.startActivity(viewIntent) }
             .onFailure {
-                _uiState.update { it.copy(errorMessage = "No video player app found to open the file.") }
+                _uiState.update { it.copy(error = AppError.NoVideoPlayerFound) }
             }
     }
 
@@ -454,9 +518,11 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         liveShaderParams.set(
             LiveShaderParams(
+                deblock = options.deblockStrength,
                 denoise = options.denoiseStrength,
                 detail = options.detailStrength,
                 clarity = options.clarityStrength,
+                vibrance = options.vibranceStrength,
                 splitX = if (splitEnabled && !showingExportedResult) splitPos else -1f,
                 showOriginalOnly = showingExportedResult,
             ),

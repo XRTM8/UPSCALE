@@ -19,6 +19,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -26,10 +27,16 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import com.xrtm8.upscale.MainActivity
+import com.xrtm8.upscale.R
+import com.xrtm8.upscale.data.PreferencesStore
+import com.xrtm8.upscale.model.AppError
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportPlan
+import com.xrtm8.upscale.model.ExportPlanCalculator
 import com.xrtm8.upscale.model.ExportState
+import com.xrtm8.upscale.model.LocalizedExportException
 import com.xrtm8.upscale.model.VideoMetadata
+import com.xrtm8.upscale.ui.stringsFor
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -100,7 +107,7 @@ class ExportForegroundService : Service() {
     private fun startForegroundJob(request: ActiveExportRequest) {
         cancelled.set(false)
         val jobId = UUID.randomUUID().toString()
-        val outputName = "UPSCALE-${jobId.take(10)}.mp4"
+        val outputName = ExportPlanCalculator.buildSmartOutputName(request.source.name, request.options)
         currentJobId = jobId
         currentOutputName = outputName
         currentDurationMs = request.plan.effectiveDurationMs.coerceAtLeast(1L)
@@ -177,7 +184,9 @@ class ExportForegroundService : Service() {
                     if (cancelled.get()) {
                         finishCancelled()
                     } else {
-                        failExport(exception.message ?: "Device video encoder failed.")
+                        failExport(
+                            AppError.GenericFailure(exception.message ?: "Device video encoder failed."),
+                        )
                     }
                 }
             })
@@ -195,11 +204,12 @@ class ExportForegroundService : Service() {
 
         val effects = VideoEffectsFactory.buildExportEffects(request.plan, request.options)
         val editedItem = EditedMediaItem.Builder(mediaItemBuilder.build())
+            .setRemoveAudio(request.plan.muteAudio)
             .setEffects(Effects(emptyList(), effects))
             .build()
 
         val composition = Composition.Builder(
-            androidx.media3.transformer.EditedMediaItemSequence.Builder(listOf(editedItem)).build(),
+            EditedMediaItemSequence.Builder(listOf(editedItem)).build(),
         ).apply {
             if (request.plan.toneMapHdrToSdr) {
                 setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
@@ -213,7 +223,7 @@ class ExportForegroundService : Service() {
         } catch (error: Exception) {
             handler.removeCallbacks(progressPoller)
             transformer = null
-            failExport(error.message ?: "Unable to start export.")
+            failExport(AppError.UnableToPrepareExport(error.message))
         }
     }
 
@@ -250,7 +260,9 @@ class ExportForegroundService : Service() {
                         )
                         stopForegroundAndSelf()
                     }.onFailure { error ->
-                        failExport(error.message ?: "Export verification failed.")
+                        val appError = (error as? LocalizedExportException)?.appError
+                            ?: AppError.GenericFailure(error.message ?: "Export verification failed.")
+                        failExport(appError)
                     }
                 }
             }
@@ -273,11 +285,11 @@ class ExportForegroundService : Service() {
         stopForegroundAndSelf()
     }
 
-    private fun failExport(message: String) {
+    private fun failExport(error: AppError) {
         tempFile?.delete()
         tempFile = null
         ExportRepository.registerCancel(null)
-        ExportRepository.setState(ExportState.Failed(message))
+        ExportRepository.setState(ExportState.Failed(error))
         stopForegroundAndSelf()
     }
 
@@ -292,6 +304,7 @@ class ExportForegroundService : Service() {
     }
 
     private fun buildNotification(progressPercent: Int, outputName: String): Notification {
+        val strings = stringsFor(PreferencesStore(this).loadLanguage())
         val openAppIntent = PendingIntent.getActivity(
             this,
             0,
@@ -305,14 +318,14 @@ class ExportForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, ExportRepository.EXPORT_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setContentTitle("UPSCALE Studio · $progressPercent%")
+            .setSmallIcon(R.drawable.ic_stat_upscale)
+            .setContentTitle("${strings.exporting} · $progressPercent%")
             .setContentText(outputName)
             .setProgress(100, progressPercent.coerceIn(0, 100), false)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openAppIntent)
-            .addAction(0, "Cancel", cancelIntent)
+            .addAction(0, strings.cancel, cancelIntent)
             .build()
     }
 
@@ -335,10 +348,24 @@ class ExportForegroundService : Service() {
             source: VideoMetadata,
             options: ExportOptions,
             plan: ExportPlan,
-        ) {
-            pendingRequest = ActiveExportRequest(source, options, plan)
-            val intent = Intent(context, ExportForegroundService::class.java).setAction(ACTION_START)
-            context.startForegroundService(intent)
+        ): Boolean {
+            return runCatching {
+                pendingRequest = ActiveExportRequest(source, options, plan)
+                val intent = Intent(context, ExportForegroundService::class.java).setAction(ACTION_START)
+                context.startForegroundService(intent)
+                true
+            }.getOrElse { error ->
+                pendingRequest = null
+                ExportRepository.setState(
+                    ExportState.Failed(AppError.UnableToPrepareExport(error.message)),
+                )
+                false
+            }
+        }
+
+        fun cancelPendingIfPreparing() {
+            pendingRequest = null
+            ExportRepository.setState(ExportState.Cancelled)
         }
     }
 }

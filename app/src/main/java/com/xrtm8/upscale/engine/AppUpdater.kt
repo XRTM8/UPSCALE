@@ -22,6 +22,8 @@ data class ReleaseUpdateInfo(
     val downloadUrl: String,
     val sizeBytes: Long,
     val expectedSha256: String?,
+    val checksumUrl: String? = null,
+    val releaseNotes: String = "",
 )
 
 sealed interface UpdateStatus {
@@ -38,6 +40,7 @@ object AppUpdater {
     const val REPO_PACKAGE_ID = "com.xrtm8.upscale"
     const val PERMANENT_CERT_SHA256 = "39b2da1a2249a87b340b0c94b1d9098829f6f263bb9636f9743cb2c73aa56925"
     private const val LATEST_RELEASE_API = "https://api.github.com/repos/XRTM8/UPSCALE/releases/latest"
+    private const val TRUSTED_DOWNLOAD_PREFIX = "https://github.com/XRTM8/UPSCALE/releases/download/"
 
     fun parseVersionCode(versionName: String): Long? {
         val clean = versionName.trim().removePrefix("v").substringBefore('-')
@@ -61,18 +64,26 @@ object AppUpdater {
         val remoteVersionCode = parseVersionCode(versionName) ?: return null
         if (remoteVersionCode <= currentVersionCode) return null
 
+        val releaseNotes = root.optString("body", "").trim()
         val assets = root.optJSONArray("assets") ?: return null
         val isArm64 = supportedAbis.any { it.equals("arm64-v8a", ignoreCase = true) }
 
         var arm64Asset: ReleaseUpdateInfo? = null
         var universalAsset: ReleaseUpdateInfo? = null
+        var checksumsUrl: String? = null
 
         for (i in 0 until assets.length()) {
             val item = assets.optJSONObject(i) ?: continue
             val name = item.optString("name", "")
-            if (!name.endsWith(".apk", ignoreCase = true)) continue
             val url = item.optString("browser_download_url", "")
-            if (!url.startsWith("https://github.com/XRTM8/UPSCALE/releases/download/")) continue
+            if (!url.startsWith(TRUSTED_DOWNLOAD_PREFIX)) continue
+
+            if (name.equals("SHA256SUMS.txt", ignoreCase = true)) {
+                checksumsUrl = url
+                continue
+            }
+            if (!name.endsWith(".apk", ignoreCase = true)) continue
+
             val size = item.optLong("size", 0L)
             val digest = item.optString("digest", "").removePrefix("sha256:").lowercase().takeIf {
                 it.length == 64 && it.all { ch -> ch in '0'..'9' || ch in 'a'..'f' }
@@ -84,6 +95,7 @@ object AppUpdater {
                 downloadUrl = url,
                 sizeBytes = size,
                 expectedSha256 = digest,
+                releaseNotes = releaseNotes,
             )
             when {
                 name.contains("arm64-v8a", ignoreCase = true) -> arm64Asset = parsed
@@ -91,7 +103,28 @@ object AppUpdater {
             }
         }
 
-        return if (isArm64) (arm64Asset ?: universalAsset) else universalAsset
+        val chosen = if (isArm64) (arm64Asset ?: universalAsset) else universalAsset
+        return chosen?.copy(checksumUrl = checksumsUrl)
+    }
+
+    fun parseSha256FromSums(sumsText: String, assetName: String): String? {
+        return sumsText.lineSequence()
+            .map { it.trim() }
+            .firstNotNullOfOrNull { line ->
+                if (line.isEmpty()) return@firstNotNullOfOrNull null
+                val parts = line.split(Regex("\\s+"))
+                if (parts.size >= 2) {
+                    val hash = parts[0].lowercase()
+                    val file = parts.last().removePrefix("*")
+                    if (file == assetName && hash.length == 64 && hash.all { it in '0'..'9' || it in 'a'..'f' }) {
+                        hash
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
     }
 
     fun checkLatestRelease(
@@ -121,6 +154,30 @@ object AppUpdater {
         dir.listFiles()?.forEach { it.delete() }
     }
 
+    private fun fetchExpectedSha256Fallback(info: ReleaseUpdateInfo): String? {
+        if (info.expectedSha256 != null) return info.expectedSha256
+        val url = info.checksumUrl ?: return null
+        if (!url.startsWith(TRUSTED_DOWNLOAD_PREFIX)) return null
+        return runCatching {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = true
+                connectTimeout = 8_000
+                readTimeout = 8_000
+                setRequestProperty("User-Agent", "UPSCALE-Studio-Android/${BuildConfig.VERSION_NAME}")
+            }
+            try {
+                if (conn.responseCode in 200..299) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    parseSha256FromSums(text, info.assetName)
+                } else {
+                    null
+                }
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+    }
+
     fun downloadAndVerify(
         context: Context,
         info: ReleaseUpdateInfo,
@@ -129,6 +186,7 @@ object AppUpdater {
         val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
         updatesDir.listFiles()?.forEach { it.delete() }
         val targetFile = File(updatesDir, info.assetName)
+        val expectedHash = fetchExpectedSha256Fallback(info)
 
         val conn = (URL(info.downloadUrl).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
@@ -165,8 +223,8 @@ object AppUpdater {
         }
 
         val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-        if (info.expectedSha256 != null) {
-            check(actualSha256.equals(info.expectedSha256, ignoreCase = true)) {
+        if (expectedHash != null) {
+            check(actualSha256.equals(expectedHash, ignoreCase = true)) {
                 "Downloaded APK checksum mismatch."
             }
         }
