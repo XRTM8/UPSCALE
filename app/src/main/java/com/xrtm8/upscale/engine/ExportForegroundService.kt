@@ -209,7 +209,7 @@ class ExportForegroundService : Service() {
             .build()
 
         val composition = Composition.Builder(
-            EditedMediaItemSequence.Builder(listOf(editedItem)).build(),
+            EditedMediaItemSequence.Builder(editedItem).build(),
         ).apply {
             if (request.plan.toneMapHdrToSdr) {
                 setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)

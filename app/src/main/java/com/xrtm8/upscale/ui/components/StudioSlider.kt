@@ -48,6 +48,8 @@ fun StudioSlider(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     step: Float = 0.05f,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
+    isBipolar: Boolean = false,
     decreaseDescription: String? = null,
     increaseDescription: String? = null,
 ) {
@@ -60,6 +62,17 @@ fun StudioSlider(
     val borderColor = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
     val accentTrack = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
     val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
+
+    val displayText = if (isBipolar) {
+        val pct = (value * 100f).roundToInt()
+        when {
+            pct > 0 -> "\u2066+$pct\u2069"
+            pct < 0 -> "\u2066$pct\u2069"
+            else -> "0"
+        }
+    } else {
+        "${(value * 100f).roundToInt()}%"
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -99,7 +112,7 @@ fun StudioSlider(
                         .size(26.dp)
                         .clip(CircleShape)
                         .clickable {
-                            val next = (value - step).coerceIn(0f, 1f)
+                            val next = (value - step).coerceIn(valueRange.start, valueRange.endInclusive)
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onValueChange(next)
                         },
@@ -108,13 +121,13 @@ fun StudioSlider(
                     Icon(
                         imageVector = Icons.Default.Remove,
                         contentDescription = decreaseDescription?.let { "$it $title" },
-                        tint = if (value > 0.001f) secondaryText else subtleIcon,
+                        tint = if (value > valueRange.start + 0.001f) secondaryText else subtleIcon,
                         modifier = Modifier.size(13.dp),
                     )
                 }
 
                 Text(
-                    text = "${(value * 100f).roundToInt()}%",
+                    text = displayText,
                     color = accentText,
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -126,7 +139,7 @@ fun StudioSlider(
                         .size(26.dp)
                         .clip(CircleShape)
                         .clickable {
-                            val next = (value + step).coerceIn(0f, 1f)
+                            val next = (value + step).coerceIn(valueRange.start, valueRange.endInclusive)
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onValueChange(next)
                         },
@@ -135,7 +148,7 @@ fun StudioSlider(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = increaseDescription?.let { "$it $title" },
-                        tint = if (value < 0.999f) secondaryText else subtleIcon,
+                        tint = if (value < valueRange.endInclusive - 0.001f) secondaryText else subtleIcon,
                         modifier = Modifier.size(13.dp),
                     )
                 }
@@ -144,6 +157,7 @@ fun StudioSlider(
 
         Slider(
             value = value,
+            valueRange = valueRange,
             onValueChange = onValueChange,
             colors = SliderDefaults.colors(
                 thumbColor = accentTrack,

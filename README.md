@@ -4,6 +4,12 @@
 
 > أُرشف إصدار سطح المكتب السابق (Rust / Tauri `0.3.0`) في الفرع `legacy-tauri` والوسم `archive/tauri-v0.3`.
 
+## ما يقدمه الإصدار 0.9.0
+
+- **شريط مصغّرات تفاعلي لقصّ المدة (`Trim Thumbnail Strip`):** استخراج مصغّرات الإطارات لعرض موضع البداية والنهاية بصرياً أثناء قص المقطع.
+- **ضبط الإضاءة ودرجة اللون (`Exposure & Warmth`):** شادر OpenGL ES مدمج للتحكم في الإضاءة والدفء اللوني ضمن الأوضاع الجاهزة أو التخصيص اليدوي.
+- **التحكم بمعدل الإطارات (`Source / 30 fps / 60 fps`):** تقليل معدل الإطارات عند التصدير عبر `FrameDropEffect` لتوافق مثالي مع المنصات وتقليل حجم الملف.
+
 ## ما يقدمه الإصدار 0.8.0
 
 - **ترقية محرك المعالجة الفوري (`UpscaleGlEffect`):**
@@ -30,7 +36,7 @@
 ./gradlew testDebugUnitTest lintDebug assembleRelease
 ```
 
-لتوقيع حزمتَي الإصدار (`arm64-v8a` و`universal`) والتحقق من الشهادة الدائمة (`com.xrtm8.upscale`، `versionCode = 8000`):
+لتوقيع حزمتَي الإصدار (`arm64-v8a` و`universal`) والتحقق من الشهادة الدائمة (`com.xrtm8.upscale`، `versionCode = 9000`):
 
 ```powershell
 .\scripts\sign-release.ps1

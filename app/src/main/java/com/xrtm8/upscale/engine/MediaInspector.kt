@@ -2,6 +2,7 @@ package com.xrtm8.upscale.engine
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaExtractor
@@ -212,5 +213,35 @@ object MediaInspector {
             }
         }
         results
+    }.getOrDefault(emptyList())
+
+    fun extractTrimThumbnails(
+        context: Context,
+        uriString: String,
+        durationMs: Long,
+        count: Int = 7,
+    ): List<Bitmap> = runCatching {
+        if (durationMs <= 0L || count <= 0) return emptyList()
+        val retriever = MediaMetadataRetriever()
+        val bitmaps = mutableListOf<Bitmap>()
+        try {
+            retriever.setDataSource(context, Uri.parse(uriString))
+            for (i in 0 until count) {
+                val fraction = if (count == 1) 0.5f else i.toFloat() / (count - 1).toFloat()
+                val timeUs = (durationMs * 1_000L * fraction).toLong().coerceAtLeast(0L)
+                val frame = retriever.getScaledFrameAtTime(
+                    timeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                    140,
+                    200,
+                )
+                if (frame != null) {
+                    bitmaps += frame
+                }
+            }
+        } finally {
+            runCatching { retriever.release() }
+        }
+        bitmaps
     }.getOrDefault(emptyList())
 }

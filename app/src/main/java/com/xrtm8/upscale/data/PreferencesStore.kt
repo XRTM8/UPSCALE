@@ -9,6 +9,7 @@ import com.xrtm8.upscale.model.OutputResolution
 import com.xrtm8.upscale.model.PlatformPreset
 import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.model.QualityMode
+import com.xrtm8.upscale.model.TargetFps
 import com.xrtm8.upscale.model.VideoCodecChoice
 
 class PreferencesStore(context: Context) {
@@ -48,12 +49,15 @@ class PreferencesStore(context: Context) {
         framing = enumValueOrDefault(prefs.getString("framing", null), FramingMode.CONTAIN),
         resolution = enumValueOrDefault(prefs.getString("resolution", null), OutputResolution.FHD_1080P),
         codec = enumValueOrDefault(prefs.getString("codec", null), VideoCodecChoice.H264),
+        targetFps = enumValueOrDefault(prefs.getString("targetFps", null), TargetFps.SOURCE),
         preset = enumValueOrDefault(prefs.getString("preset", null), EnhancementPreset.NATURAL),
         deblockStrength = prefs.getFloat("deblockStrength", 0.25f).coerceIn(0f, 1f),
         denoiseStrength = prefs.getFloat("denoiseStrength", 0.45f).coerceIn(0f, 1f),
         detailStrength = prefs.getFloat("detailStrength", 0.65f).coerceIn(0f, 1f),
         clarityStrength = prefs.getFloat("clarityStrength", 0.25f).coerceIn(0f, 1f),
         vibranceStrength = prefs.getFloat("vibranceStrength", 0.10f).coerceIn(0f, 1f),
+        exposureStrength = prefs.getFloat("exposureStrength", 0f).coerceIn(-1f, 1f),
+        warmthStrength = prefs.getFloat("warmthStrength", 0f).coerceIn(-1f, 1f),
         muteAudio = prefs.getBoolean("muteAudio", false),
     )
 
@@ -65,12 +69,15 @@ class PreferencesStore(context: Context) {
             .putString("framing", options.framing.name)
             .putString("resolution", options.resolution.name)
             .putString("codec", options.codec.name)
+            .putString("targetFps", options.targetFps.name)
             .putString("preset", options.preset.name)
             .putFloat("deblockStrength", options.deblockStrength)
             .putFloat("denoiseStrength", options.denoiseStrength)
             .putFloat("detailStrength", options.detailStrength)
             .putFloat("clarityStrength", options.clarityStrength)
             .putFloat("vibranceStrength", options.vibranceStrength)
+            .putFloat("exposureStrength", options.exposureStrength)
+            .putFloat("warmthStrength", options.warmthStrength)
             .putBoolean("muteAudio", options.muteAudio)
             .apply()
     }

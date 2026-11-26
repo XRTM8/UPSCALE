@@ -10,6 +10,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.Crop
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import androidx.media3.effect.Presentation
@@ -18,6 +19,7 @@ import com.xrtm8.upscale.model.ExportPlan
 import com.xrtm8.upscale.model.FramingMode
 import com.xrtm8.upscale.model.NormalizedCropRect
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 
 data class LiveShaderParams(
     val deblock: Float = 0.25f,
@@ -25,6 +27,8 @@ data class LiveShaderParams(
     val detail: Float = 0.65f,
     val clarity: Float = 0.25f,
     val vibrance: Float = 0.10f,
+    val exposure: Float = 0f,
+    val warmth: Float = 0f,
     /**
      * -1f = apply enhancement across the entire frame (export or full enhanced preview).
      * 0f..1f = live split-screen divider X (left of divider = original, right = enhanced).
@@ -51,7 +55,9 @@ class UpscaleGlEffect(
                 params.denoise <= 0.001f &&
                 params.detail <= 0.001f &&
                 params.clarity <= 0.001f &&
-                params.vibrance <= 0.001f
+                params.vibrance <= 0.001f &&
+                abs(params.exposure) <= 0.001f &&
+                abs(params.warmth) <= 0.001f
             )
     }
 }
@@ -96,6 +102,8 @@ private class UpscaleShaderProgram(
             glProgram.setFloatUniform("uDetail", if (params.showOriginalOnly) 0f else params.detail)
             glProgram.setFloatUniform("uClarity", if (params.showOriginalOnly) 0f else params.clarity)
             glProgram.setFloatUniform("uVibrance", if (params.showOriginalOnly) 0f else params.vibrance)
+            glProgram.setFloatUniform("uExposure", if (params.showOriginalOnly) 0f else params.exposure)
+            glProgram.setFloatUniform("uWarmth", if (params.showOriginalOnly) 0f else params.warmth)
             glProgram.setFloatUniform("uSplitX", if (params.showOriginalOnly) 2f else params.splitX)
             glProgram.setFloatUniform("uHdrMode", if (useHdr) 1f else 0f)
             glProgram.bindAttributesAndUniforms()
@@ -133,6 +141,8 @@ private class UpscaleShaderProgram(
             uniform float uDetail;
             uniform float uClarity;
             uniform float uVibrance;
+            uniform float uExposure;
+            uniform float uWarmth;
             uniform float uSplitX;
             uniform float uHdrMode;
             varying vec2 vTexSamplingCoord;
@@ -209,16 +219,31 @@ private class UpscaleShaderProgram(
                     }
                 }
 
-                // 3) Subtle mid-tone clarity curve without clipping highlights.
-                vec3 clarified = sharpened;
-                if (uClarity > 0.001) {
-                    vec3 unit = clamp(sharpened, 0.0, 1.0);
-                    vec3 sCurve = unit * unit * (3.0 - 2.0 * unit);
-                    vec3 target = (uHdrMode > 0.5) ? max(sharpened, sCurve) : sCurve;
-                    clarified = mix(sharpened, target, uClarity * 0.34);
+                // 3) Exposure & white-balance warmth.
+                vec3 toned = sharpened;
+                if (abs(uExposure) > 0.001) {
+                    toned = toned * exp2(uExposure * 0.55);
+                }
+                if (abs(uWarmth) > 0.001) {
+                    float lTone = clamp(luma(toned), 0.0, 1.0);
+                    float weight = 0.35 + 0.65 * lTone;
+                    toned += vec3(uWarmth * 0.055, 0.0, -uWarmth * 0.055) * weight;
+                }
+                toned = max(toned, 0.0);
+                if (uHdrMode < 0.5) {
+                    toned = min(toned, 1.0);
                 }
 
-                // 4) Skin-protective vibrance boost (lifts muted colors, leaves saturated tones safe).
+                // 4) Subtle mid-tone clarity curve without clipping highlights.
+                vec3 clarified = toned;
+                if (uClarity > 0.001) {
+                    vec3 unit = clamp(toned, 0.0, 1.0);
+                    vec3 sCurve = unit * unit * (3.0 - 2.0 * unit);
+                    vec3 target = (uHdrMode > 0.5) ? max(toned, sCurve) : sCurve;
+                    clarified = mix(toned, target, uClarity * 0.34);
+                }
+
+                // 5) Skin-protective vibrance boost (lifts muted colors, leaves saturated tones safe).
                 vec3 finalRgb = clarified;
                 if (uVibrance > 0.001) {
                     float l = luma(clarified);
@@ -244,6 +269,9 @@ object VideoEffectsFactory {
 
     fun buildExportEffects(plan: ExportPlan, options: ExportOptions): List<Effect> {
         val effects = mutableListOf<Effect>()
+        plan.targetFps?.let { fps ->
+            effects += FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat())
+        }
         plan.cropRect?.let { rect ->
             effects += Crop(rect.left, rect.right, rect.bottom, rect.top)
         }
@@ -260,6 +288,8 @@ object VideoEffectsFactory {
             detail = options.detailStrength,
             clarity = options.clarityStrength,
             vibrance = options.vibranceStrength,
+            exposure = options.exposureStrength,
+            warmth = options.warmthStrength,
             splitX = -1f,
             showOriginalOnly = false,
         )

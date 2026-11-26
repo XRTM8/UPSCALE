@@ -523,6 +523,8 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 detail = options.detailStrength,
                 clarity = options.clarityStrength,
                 vibrance = options.vibranceStrength,
+                exposure = options.exposureStrength,
+                warmth = options.warmthStrength,
                 splitX = if (splitEnabled && !showingExportedResult) splitPos else -1f,
                 showOriginalOnly = showingExportedResult,
             ),

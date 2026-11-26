@@ -1,25 +1,31 @@
 package com.xrtm8.upscale.ui.components
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,20 +39,26 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.xrtm8.upscale.engine.MediaInspector
 import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.EnhancementPreset
@@ -57,11 +69,14 @@ import com.xrtm8.upscale.model.OutputResolution
 import com.xrtm8.upscale.model.PlatformPreset
 import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.model.QualityMode
+import com.xrtm8.upscale.model.TargetFps
 import com.xrtm8.upscale.model.VideoCodecChoice
 import com.xrtm8.upscale.model.VideoMetadata
 import com.xrtm8.upscale.ui.StudioStrings
 import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
 import com.xrtm8.upscale.ui.theme.StudioColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -212,6 +227,30 @@ fun ProcessingBottomSheet(
                 decreaseDescription = strings.decrease,
                 increaseDescription = strings.increase,
             )
+            StudioSlider(
+                title = strings.exposure,
+                value = options.exposureStrength,
+                valueRange = -1f..1f,
+                isBipolar = true,
+                step = 0.08f,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, exposureStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
+            StudioSlider(
+                title = strings.warmth,
+                value = options.warmthStrength,
+                valueRange = -1f..1f,
+                isBipolar = true,
+                step = 0.08f,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, warmthStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
 
             Text(
                 text = strings.gpuEngineNote,
@@ -264,6 +303,7 @@ fun OutputBottomSheet(
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val isAmoledWhite = LocalAmoledWhite.current
     val sheetBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
     val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
@@ -382,6 +422,30 @@ fun OutputBottomSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(strings.frameRate, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    ChoiceChip(
+                        label = strings.fpsSource,
+                        selected = options.targetFps == TargetFps.SOURCE,
+                        onClick = { onUpdateOptions { it.copy(targetFps = TargetFps.SOURCE) } },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChoiceChip(
+                        label = strings.fps30,
+                        selected = options.targetFps == TargetFps.FPS_30,
+                        onClick = { onUpdateOptions { it.copy(targetFps = TargetFps.FPS_30) } },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChoiceChip(
+                        label = strings.fps60,
+                        selected = options.targetFps == TargetFps.FPS_60,
+                        onClick = { onUpdateOptions { it.copy(targetFps = TargetFps.FPS_60) } },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(strings.framing, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     ChoiceChip(
@@ -432,15 +496,29 @@ fun OutputBottomSheet(
                 val committedEnd = (options.trimEndMs ?: source.durationMs).coerceIn(committedStart + 500L, source.durationMs)
                 var draftStartMs by remember(source.uriString, committedStart) { mutableLongStateOf(committedStart) }
                 var draftEndMs by remember(source.uriString, committedEnd) { mutableLongStateOf(committedEnd) }
+                var thumbnails by remember(source.uriString) { mutableStateOf<List<Bitmap>>(emptyList()) }
 
                 LaunchedEffect(committedStart, committedEnd) {
                     draftStartMs = committedStart
                     draftEndMs = committedEnd
                 }
 
+                LaunchedEffect(source.uriString, source.durationMs) {
+                    val frames = withContext(Dispatchers.IO) {
+                        MediaInspector.extractTrimThumbnails(context, source.uriString, source.durationMs, count = 7)
+                    }
+                    thumbnails = frames
+                }
+
+                DisposableEffect(source.uriString) {
+                    onDispose {
+                        thumbnails.forEach { it.recycle() }
+                    }
+                }
+
                 val isShortTest = draftStartMs == 0L && draftEndMs <= 5_200L && source.durationMs > 6_000L
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -484,6 +562,51 @@ fun OutputBottomSheet(
                             )
                         }
                     }
+
+                    if (thumbnails.isNotEmpty()) {
+                        val startFrac = (draftStartMs.toFloat() / totalMs).coerceIn(0f, 1f)
+                        val endFrac = (draftEndMs.toFloat() / totalMs).coerceIn(startFrac, 1f)
+                        BoxWithConstraints(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(42.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(0.5.dp, borderColor, RoundedCornerShape(10.dp)),
+                        ) {
+                            val fullW = maxWidth
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                thumbnails.forEach { bmp ->
+                                    Image(
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                    )
+                                }
+                            }
+                            if (startFrac > 0.01f) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterStart)
+                                        .width(fullW * startFrac)
+                                        .fillMaxHeight()
+                                        .background(Color(0x99000000)),
+                                )
+                            }
+                            if (endFrac < 0.99f) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .width(fullW * (1f - endFrac))
+                                        .fillMaxHeight()
+                                        .background(Color(0x99000000)),
+                                )
+                            }
+                        }
+                    }
+
                     RangeSlider(
                         value = draftStartMs.toFloat()..draftEndMs.toFloat(),
                         valueRange = 0f..totalMs,
@@ -622,7 +745,7 @@ fun RecentExportsBottomSheet(
                             }
                             IconButton(onClick = { onOpen(item) }, modifier = Modifier.size(34.dp)) {
                                 Icon(
-                                    imageVector = Icons.Rounded.OpenInNew,
+                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
                                     contentDescription = strings.openInGallery,
                                     tint = primaryText,
                                     modifier = Modifier.size(17.dp),

@@ -41,6 +41,12 @@ enum class VideoCodecChoice(val label: String) {
     HEVC("HEVC"),
 }
 
+enum class TargetFps(val fps: Int?) {
+    SOURCE(null),
+    FPS_30(30),
+    FPS_60(60),
+}
+
 enum class EnhancementPreset {
     NATURAL,
     CRISP_TEXT,
@@ -107,12 +113,15 @@ data class ExportOptions(
     val framing: FramingMode = FramingMode.CONTAIN,
     val resolution: OutputResolution = OutputResolution.FHD_1080P,
     val codec: VideoCodecChoice = VideoCodecChoice.H264,
+    val targetFps: TargetFps = TargetFps.SOURCE,
     val preset: EnhancementPreset = EnhancementPreset.NATURAL,
     val deblockStrength: Float = 0.25f,
     val denoiseStrength: Float = 0.45f,
     val detailStrength: Float = 0.65f,
     val clarityStrength: Float = 0.25f,
     val vibranceStrength: Float = 0.10f,
+    val exposureStrength: Float = 0f,
+    val warmthStrength: Float = 0f,
     val muteAudio: Boolean = false,
     val cropOffsetX: Float = 0f,
     val cropOffsetY: Float = 0f,
@@ -127,6 +136,8 @@ data class ExportOptions(
             detailStrength = 0.65f,
             clarityStrength = 0.25f,
             vibranceStrength = 0.10f,
+            exposureStrength = 0f,
+            warmthStrength = 0f,
         )
         EnhancementPreset.CRISP_TEXT -> copy(
             preset = EnhancementPreset.CRISP_TEXT,
@@ -135,6 +146,8 @@ data class ExportOptions(
             detailStrength = 0.85f,
             clarityStrength = 0.35f,
             vibranceStrength = 0.05f,
+            exposureStrength = 0.05f,
+            warmthStrength = 0f,
         )
         EnhancementPreset.LOW_LIGHT -> copy(
             preset = EnhancementPreset.LOW_LIGHT,
@@ -143,6 +156,8 @@ data class ExportOptions(
             detailStrength = 0.45f,
             clarityStrength = 0.25f,
             vibranceStrength = 0.15f,
+            exposureStrength = 0.18f,
+            warmthStrength = 0.05f,
         )
         EnhancementPreset.CINEMA -> copy(
             preset = EnhancementPreset.CINEMA,
@@ -151,6 +166,8 @@ data class ExportOptions(
             detailStrength = 0.55f,
             clarityStrength = 0.40f,
             vibranceStrength = 0.22f,
+            exposureStrength = -0.04f,
+            warmthStrength = 0.14f,
         )
         EnhancementPreset.CUSTOM -> copy(preset = EnhancementPreset.CUSTOM)
     }
@@ -181,6 +198,8 @@ data class ExportOptions(
             detailStrength = detailStrength.coerceIn(0f, 1f),
             clarityStrength = clarityStrength.coerceIn(0f, 1f),
             vibranceStrength = vibranceStrength.coerceIn(0f, 1f),
+            exposureStrength = exposureStrength.coerceIn(-1f, 1f),
+            warmthStrength = warmthStrength.coerceIn(-1f, 1f),
             cropOffsetX = cropOffsetX.coerceIn(-1f, 1f),
             cropOffsetY = cropOffsetY.coerceIn(-1f, 1f),
         )
@@ -221,6 +240,7 @@ data class ExportPlan(
     val useHevc: Boolean,
     val toneMapHdrToSdr: Boolean,
     val muteAudio: Boolean,
+    val targetFps: Int?,
     val trimStartMs: Long,
     val trimEndMs: Long,
     val effectiveDurationMs: Long,
@@ -283,6 +303,13 @@ object ExportPlanCalculator {
             capabilities.supportsHevcFor(options.resolution)
         val bitrate = computeBitrate(options.resolution, options.quality, useHevc)
 
+        val requestedFps = options.targetFps.fps
+        val effectiveTargetFps = if (requestedFps != null && source.frameRate > requestedFps + 1.0) {
+            requestedFps
+        } else {
+            null
+        }
+
         val cropRect = if (options.framing == FramingMode.COVER) {
             computeCoverCrop(
                 sourceWidth = source.displayWidth,
@@ -303,6 +330,7 @@ object ExportPlanCalculator {
             useHevc = useHevc,
             toneMapHdrToSdr = source.isHdr,
             muteAudio = options.muteAudio || !source.hasAudio,
+            targetFps = effectiveTargetFps,
             trimStartMs = trimStart,
             trimEndMs = trimEnd,
             effectiveDurationMs = effectiveDuration,

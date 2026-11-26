@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowOutward
 import androidx.compose.material.icons.rounded.Close
@@ -35,7 +36,6 @@ import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Movie
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
@@ -890,7 +890,7 @@ private fun ExportStatusStrip(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             modifier = Modifier.height(34.dp),
                         ) {
-                            Icon(Icons.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(strings.openInGallery, style = MaterialTheme.typography.labelSmall)
                         }

@@ -38,8 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.CompareArrows
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Share
@@ -470,7 +470,7 @@ fun VideoPreviewStage(
                                 modifier = Modifier.size(34.dp),
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.OpenInNew,
+                                    imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
                                     contentDescription = strings.openInGallery,
                                     tint = primaryText,
                                     modifier = Modifier.size(18.dp),

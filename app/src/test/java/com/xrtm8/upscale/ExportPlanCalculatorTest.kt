@@ -10,6 +10,7 @@ import com.xrtm8.upscale.model.OutputResolution
 import com.xrtm8.upscale.model.PlatformPreset
 import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.model.QualityMode
+import com.xrtm8.upscale.model.TargetFps
 import com.xrtm8.upscale.model.VideoCodecChoice
 import com.xrtm8.upscale.model.VideoMetadata
 import org.junit.Assert.assertEquals
@@ -182,6 +183,33 @@ class ExportPlanCalculatorTest {
         val lowStorage = capableDevice().copy(freeStorageBytes = 5L * 1024L * 1024L)
         val result = ExportPlanCalculator.buildPlan(sampleVideo(), ExportOptions(), lowStorage)
         assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun targetFpsCapsOnlyWhenSourceExceedsRequestedFps() {
+        val sixtyFpsVideo = sampleVideo().copy(frameRate = 60.0)
+        val cap30Plan = ExportPlanCalculator.buildPlan(
+            sixtyFpsVideo,
+            ExportOptions(targetFps = TargetFps.FPS_30),
+            capableDevice(),
+        ).getOrThrow()
+        assertEquals(30, cap30Plan.targetFps)
+
+        val thirtyFpsVideo = sampleVideo().copy(frameRate = 30.0)
+        val cap60Plan = ExportPlanCalculator.buildPlan(
+            thirtyFpsVideo,
+            ExportOptions(targetFps = TargetFps.FPS_60),
+            capableDevice(),
+        ).getOrThrow()
+        assertNull(cap60Plan.targetFps)
+    }
+
+    @Test
+    fun exposureAndWarmthClampWithinBipolarBounds() {
+        val normalized = ExportOptions(exposureStrength = 1.5f, warmthStrength = -2f)
+            .normalizedForPlatform(capableDevice())
+        assertEquals(1f, normalized.exposureStrength, 0.001f)
+        assertEquals(-1f, normalized.warmthStrength, 0.001f)
     }
 
     @Test
