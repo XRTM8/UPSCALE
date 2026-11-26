@@ -4,6 +4,8 @@ import com.xrtm8.upscale.model.AppLanguage
 
 data class StudioStrings(
     val studioTitle: String,
+    val heroTitle: String,
+    val heroSubtitle: String,
     val noVideoLoaded: String,
     val chooseVideo: String,
     val importVideo: String,
@@ -59,11 +61,14 @@ data class StudioStrings(
     val updateReady: String,
     val checkingUpdate: String,
     val upToDate: String,
+    val toggleTheme: String,
 )
 
 fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLanguage.AR) {
     StudioStrings(
-        studioTitle = "استوديو الهاتف",
+        studioTitle = "استوديو الفيديو المحلي",
+        heroTitle = "مشروع فيديو جديد",
+        heroSubtitle = "معالجة محلية بـ OpenGL ES وMedia3 دون رفع ملفاتك",
         noVideoLoaded = "لا يوجد فيديو",
         chooseVideo = "اختيار فيديو",
         importVideo = "استيراد فيديو",
@@ -94,8 +99,8 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         trimClip = "قص المدة",
         estimatedSize = "الحجم التقديري",
         localNote = "معالجة محلية كاملة على جهازك",
-        gpuEngineNote = "محرك OpenGL ES الفوري + ترميز الجهاز المسرّع (Media3).",
-        hdrToneMapNote = "ملف HDR: سيتم تحويله تلقائياً إلى SDR بدقة ألوان OpenGL.",
+        gpuEngineNote = "شادر OpenGL ES فوري (تنظيف، حدة CAS، وضوح) + ترميز Media3 المسرّع.",
+        hdrToneMapNote = "ملف HDR: سيتم تحويل ألوانه تلقائياً إلى SDR عبر OpenGL.",
         thermalWarning = "حرارة الجهاز مرتفعة؛ قد تنخفض سرعة التصدير لحماية الهاتف.",
         fourKUnavailable = "دقة 4K غير مدعومة في مرمّز هذا الجهاز أو مقيّدة لهذه المنصة.",
         exporting = "جارٍ التحسين والتصدير",
@@ -119,10 +124,13 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         updateReady = "التحديث جاهز وموثّق",
         checkingUpdate = "جارٍ فحص التحديثات…",
         upToDate = "لديك أحدث إصدار",
+        toggleTheme = "تبديل المظهر",
     )
 } else {
     StudioStrings(
-        studioTitle = "Mobile Studio",
+        studioTitle = "Local Video Studio",
+        heroTitle = "New Video Project",
+        heroSubtitle = "On-device OpenGL ES & Media3 processing — zero cloud upload",
         noVideoLoaded = "No video loaded",
         chooseVideo = "Choose video",
         importVideo = "Import video",
@@ -153,7 +161,7 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         trimClip = "Trim clip",
         estimatedSize = "Estimated size",
         localNote = "100% local on-device processing",
-        gpuEngineNote = "Real-time OpenGL ES enhancement + hardware Media3 encoder.",
+        gpuEngineNote = "Real-time OpenGL ES shaders (denoise, CAS detail, clarity) + Media3 encoder.",
         hdrToneMapNote = "HDR source detected: automatic OpenGL HDR-to-SDR tone mapping enabled.",
         thermalWarning = "Device temperature is high; export speed may throttle.",
         fourKUnavailable = "4K is unavailable for this platform or device hardware encoder.",
@@ -178,5 +186,6 @@ fun stringsFor(language: AppLanguage): StudioStrings = if (language == AppLangua
         updateReady = "Verified update ready",
         checkingUpdate = "Checking for updates…",
         upToDate = "You're on the latest version",
+        toggleTheme = "Switch theme",
     )
 }

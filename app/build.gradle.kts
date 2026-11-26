@@ -13,8 +13,8 @@ android {
         applicationId = "com.xrtm8.upscale"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5000
-        versionName = "0.5.0"
+        versionCode = 6000
+        versionName = "0.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

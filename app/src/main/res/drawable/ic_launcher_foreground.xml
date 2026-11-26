@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle Velvet Crimson Glow Behind Mark -->
+    <path
+        android:fillColor="#1EE02447"
+        android:pathData="M54,54m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
+
+    <!-- Architectural Viewfinder Corners (Video Framing Precision) -->
+    <!-- Top-Left Bracket -->
+    <path
+        android:fillColor="#EAECEF"
+        android:pathData="M31,42 L31,34 C31,32.3 32.3,31 34,31 L42,31 L42,34.5 L34.5,34.5 L34.5,42 Z" />
+    <!-- Top-Right Bracket (Target Expanded Corner) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M66,31 L74,31 C75.7,31 77,32.3 77,34 L77,42 L73.5,42 L73.5,34.5 L66,34.5 Z" />
+    <!-- Bottom-Left Bracket -->
+    <path
+        android:fillColor="#B8BCC6"
+        android:pathData="M31,66 L34.5,66 L34.5,73.5 L42,73.5 L42,77 L34,77 C32.3,77 31,75.7 31,74 Z" />
+    <!-- Bottom-Right Bracket -->
+    <path
+        android:fillColor="#EAECEF"
+        android:pathData="M73.5,66 L77,66 L77,74 C77,75.7 75.7,77 74,77 L66,77 L66,73.5 L73.5,73.5 Z" />
+
+    <!-- Source Frame Anchor Block (Lower-Left Reference Step) -->
+    <path
+        android:fillColor="#72142B"
+        android:pathData="M39,57 L51,57 L51,69 L39,69 Z" />
+    <path
+        android:fillColor="#A1A3AF"
+        android:pathData="M39,57 L51,57 L51,58.6 L40.6,58.6 L40.6,69 L39,69 Z" />
+
+    <!-- Upscale Precision Vector Arrow Stepping Up-Right -->
+    <path
+        android:fillColor="#9C1030"
+        android:pathData="M45.5,64 L64.5,45 L67,47.5 L48,66.5 Z" />
+    <path
+        android:fillColor="#E02447"
+        android:pathData="M44,62.5 L62.5,44 L55.5,44 L55.5,39.5 L68.5,39.5 L68.5,52.5 L64,52.5 L64,45.5 L46.5,65 Z" />
+
+    <!-- Platinum Precision Diamond Node at Target Apex -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M67.5,35.5 L71.5,39.5 L67.5,43.5 L63.5,39.5 Z" />
+    <path
+        android:fillColor="#FFB3C1"
+        android:pathData="M67.5,37.3 L69.7,39.5 L67.5,41.7 L65.3,39.5 Z" />
+</vector>

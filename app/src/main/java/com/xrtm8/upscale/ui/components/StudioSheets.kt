@@ -22,7 +22,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -31,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.ExportOptions
@@ -43,8 +45,8 @@ import com.xrtm8.upscale.model.QualityMode
 import com.xrtm8.upscale.model.VideoCodecChoice
 import com.xrtm8.upscale.model.VideoMetadata
 import com.xrtm8.upscale.ui.StudioStrings
+import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
 import com.xrtm8.upscale.ui.theme.StudioColors
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,12 +58,18 @@ fun ProcessingBottomSheet(
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isAmoledWhite = LocalAmoledWhite.current
+    val sheetBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
+    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
+    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = StudioColors.GlassElevated,
-        contentColor = StudioColors.TextPrimary,
+        containerColor = sheetBg,
+        contentColor = primaryText,
         scrimColor = Color(0x99000000),
     ) {
         Column(
@@ -74,7 +82,7 @@ fun ProcessingBottomSheet(
             Text(strings.processing, style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(strings.qualityMode, style = MaterialTheme.typography.bodySmall)
+                Text(strings.qualityMode, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     ChoiceChip(
                         label = strings.maximum,
@@ -91,18 +99,18 @@ fun ProcessingBottomSheet(
                 }
             }
 
-            StrengthSliderRow(
-                label = strings.denoise,
+            StudioSlider(
+                title = strings.denoise,
                 value = options.denoiseStrength,
                 onValueChange = { v -> onUpdateOptions { it.copy(denoiseStrength = v) } },
             )
-            StrengthSliderRow(
-                label = strings.detailCas,
+            StudioSlider(
+                title = strings.detailCas,
                 value = options.detailStrength,
                 onValueChange = { v -> onUpdateOptions { it.copy(detailStrength = v) } },
             )
-            StrengthSliderRow(
-                label = strings.clarity,
+            StudioSlider(
+                title = strings.clarity,
                 value = options.clarityStrength,
                 onValueChange = { v -> onUpdateOptions { it.copy(clarityStrength = v) } },
             )
@@ -110,7 +118,7 @@ fun ProcessingBottomSheet(
             Text(
                 text = strings.gpuEngineNote,
                 style = MaterialTheme.typography.bodySmall,
-                color = StudioColors.TextSecondary,
+                color = secondaryText,
             )
 
             if (source?.isHdr == true) {
@@ -132,13 +140,15 @@ fun ProcessingBottomSheet(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0x1EEBEFF7),
-                    contentColor = StudioColors.TextPrimary,
+                    containerColor = accent,
+                    contentColor = StudioColors.PureWhite,
                 ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
             ) {
-                Text(strings.done)
+                Text(strings.done, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
@@ -156,12 +166,20 @@ fun OutputBottomSheet(
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isAmoledWhite = LocalAmoledWhite.current
+    val sheetBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
+    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
+    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val mutedText = if (isAmoledWhite) StudioColors.DarkTextSubtle else StudioColors.SubtleGray
+    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val trackInactive = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = StudioColors.GlassElevated,
-        contentColor = StudioColors.TextPrimary,
+        containerColor = sheetBg,
+        contentColor = primaryText,
         scrimColor = Color(0x99000000),
     ) {
         Column(
@@ -174,7 +192,7 @@ fun OutputBottomSheet(
             Text(strings.output, style = MaterialTheme.typography.titleMedium)
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(strings.platform, style = MaterialTheme.typography.bodySmall)
+                Text(strings.platform, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -190,7 +208,7 @@ fun OutputBottomSheet(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(strings.postType, style = MaterialTheme.typography.bodySmall)
+                Text(strings.postType, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 val allowedFormats = ExportOptions.allowedFormats(options.platform)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -216,7 +234,7 @@ fun OutputBottomSheet(
                 options.platform !in setOf(PlatformPreset.INSTAGRAM, PlatformPreset.FACEBOOK)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                    Text(strings.resolution, style = MaterialTheme.typography.bodySmall)
+                    Text(strings.resolution, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ChoiceChip(
                             label = "1080p",
@@ -235,7 +253,7 @@ fun OutputBottomSheet(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                    Text(strings.codec, style = MaterialTheme.typography.bodySmall)
+                    Text(strings.codec, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ChoiceChip(
                             label = "H.264",
@@ -258,12 +276,12 @@ fun OutputBottomSheet(
                 Text(
                     text = strings.fourKUnavailable,
                     style = MaterialTheme.typography.bodySmall,
-                    color = StudioColors.TextMuted,
+                    color = mutedText,
                 )
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(strings.framing, style = MaterialTheme.typography.bodySmall)
+                Text(strings.framing, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     ChoiceChip(
                         label = strings.contain,
@@ -282,7 +300,7 @@ fun OutputBottomSheet(
                     Text(
                         text = strings.cropPanHint,
                         style = MaterialTheme.typography.bodySmall,
-                        color = StudioColors.TextSecondary,
+                        color = secondaryText,
                     )
                 }
             }
@@ -296,11 +314,12 @@ fun OutputBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(strings.trimClip, style = MaterialTheme.typography.bodySmall)
+                        Text(strings.trimClip, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                         Text(
                             text = "${formatMs(startMs)} – ${formatMs(endMs)}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = StudioColors.TextPrimary,
+                            color = accent,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                     RangeSlider(
@@ -312,9 +331,9 @@ fun OutputBottomSheet(
                             onUpdateOptions { it.copy(trimStartMs = newStart, trimEndMs = newEnd) }
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = StudioColors.PrimaryFill,
-                            activeTrackColor = StudioColors.PrimaryFill,
-                            inactiveTrackColor = StudioColors.HairlineStrong,
+                            thumbColor = accent,
+                            activeTrackColor = accent,
+                            inactiveTrackColor = trackInactive,
                         ),
                     )
                 }
@@ -326,11 +345,12 @@ fun OutputBottomSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(strings.estimatedSize, style = MaterialTheme.typography.bodySmall)
+                    Text(strings.estimatedSize, style = MaterialTheme.typography.bodySmall, color = secondaryText)
                     Text(
                         text = "~%.1f MB".format(estMb),
                         style = MaterialTheme.typography.labelMedium,
-                        color = StudioColors.TextPrimary,
+                        color = primaryText,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
@@ -338,46 +358,18 @@ fun OutputBottomSheet(
             Button(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0x1EEBEFF7),
-                    contentColor = StudioColors.TextPrimary,
+                    containerColor = accent,
+                    contentColor = StudioColors.PureWhite,
                 ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
             ) {
-                Text(strings.done)
+                Text(strings.done, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
-    }
-}
-
-@Composable
-private fun StrengthSliderRow(
-    label: String,
-    value: Float,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                text = "${(value * 100f).roundToInt()}%",
-                style = MaterialTheme.typography.labelMedium,
-                color = StudioColors.TextSecondary,
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            colors = SliderDefaults.colors(
-                thumbColor = StudioColors.PrimaryFill,
-                activeTrackColor = StudioColors.PrimaryFill,
-                inactiveTrackColor = StudioColors.HairlineStrong,
-            ),
-        )
     }
 }
 
@@ -389,33 +381,40 @@ private fun ChoiceChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = LocalHapticFeedback.current
+    val isAmoledWhite = LocalAmoledWhite.current
+    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
     val bg = when {
-        !enabled -> Color(0xFF14161B)
-        selected -> StudioColors.AccentSoft
-        else -> Color(0xFF16191F)
+        !enabled -> if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioBackground
+        selected -> StudioColors.BurgundyMuted
+        else -> if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated
     }
     val borderColor = when {
-        !enabled -> Color(0x14EBEFF7)
-        selected -> Color(0xFF8B919E)
-        else -> StudioColors.Hairline
+        !enabled -> if (isAmoledWhite) StudioColors.WhiteBorderSubtle else StudioColors.StudioBorder
+        selected -> accent
+        else -> if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
     }
     val textColor = when {
-        !enabled -> StudioColors.TextMuted
-        selected -> Color(0xFFF0F1F3)
-        else -> StudioColors.TextSecondary
+        !enabled -> if (isAmoledWhite) StudioColors.DarkTextSubtle else StudioColors.SubtleGray
+        selected -> if (isAmoledWhite) accent else StudioColors.PureWhite
+        else -> if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(9.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .border(if (selected) 1.dp else 0.5.dp, borderColor, RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = textColor,
             maxLines = 1,
         )

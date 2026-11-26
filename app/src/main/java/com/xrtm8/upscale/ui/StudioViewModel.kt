@@ -37,6 +37,7 @@ enum class StudioSheet {
 
 data class StudioUiState(
     val language: AppLanguage = AppLanguage.AR,
+    val isAmoledWhite: Boolean = false,
     val options: ExportOptions = ExportOptions(),
     val capabilities: DeviceCapabilities = DeviceCapabilities(),
     val source: VideoMetadata? = null,
@@ -90,6 +91,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(
         StudioUiState(
             language = prefs.loadLanguage(),
+            isAmoledWhite = prefs.loadAmoledWhite(),
             options = prefs.loadOptions(),
         ),
     )
@@ -138,6 +140,14 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             val nextLang = if (state.language == AppLanguage.AR) AppLanguage.EN else AppLanguage.AR
             prefs.saveLanguage(nextLang)
             state.copy(language = nextLang)
+        }
+    }
+
+    fun toggleTheme() {
+        _uiState.update { state ->
+            val nextWhite = !state.isAmoledWhite
+            prefs.saveAmoledWhite(nextWhite)
+            state.copy(isAmoledWhite = nextWhite)
         }
     }
 

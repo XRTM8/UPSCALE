@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,15 +29,23 @@ class MainActivity : ComponentActivity() {
 
     @androidx.annotation.OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        val bg = Color.rgb(12, 14, 17)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(bg),
-            navigationBarStyle = SystemBarStyle.dark(bg),
+            statusBarStyle = SystemBarStyle.dark(Color.BLACK),
+            navigationBarStyle = SystemBarStyle.dark(Color.BLACK),
         )
         super.onCreate(savedInstanceState)
 
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+            SideEffect {
+                val style = if (state.isAmoledWhite) {
+                    SystemBarStyle.light(Color.WHITE, Color.WHITE)
+                } else {
+                    SystemBarStyle.dark(Color.BLACK)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
 
             val pickVideoLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.PickVisualMedia(),
@@ -61,7 +70,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            UpscaleStudioTheme {
+            UpscaleStudioTheme(isAmoledWhite = state.isAmoledWhite) {
                 StudioScreen(
                     state = state,
                     shaderParamsRef = viewModel.liveShaderParams,
@@ -71,6 +80,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     onToggleLanguage = viewModel::toggleLanguage,
+                    onToggleTheme = viewModel::toggleTheme,
                     onOpenSheet = viewModel::openSheet,
                     onCloseSheet = viewModel::closeSheet,
                     onToggleSplitCompare = viewModel::toggleSplitCompare,

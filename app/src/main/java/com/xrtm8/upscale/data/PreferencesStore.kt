@@ -22,6 +22,12 @@ class PreferencesStore(context: Context) {
         prefs.edit().putString("language", language.code).apply()
     }
 
+    fun loadAmoledWhite(): Boolean = prefs.getBoolean("amoledWhite", false)
+
+    fun saveAmoledWhite(isWhite: Boolean) {
+        prefs.edit().putBoolean("amoledWhite", isWhite).apply()
+    }
+
     fun lastUpdateCheckMs(): Long = prefs.getLong("lastUpdateCheckMs", 0L)
 
     fun saveLastUpdateCheckMs(timestampMs: Long) {

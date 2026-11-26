@@ -24,8 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.CompareArrows
-import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
@@ -48,15 +49,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -72,6 +79,7 @@ import com.xrtm8.upscale.model.FramingMode
 import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.model.VideoMetadata
 import com.xrtm8.upscale.ui.StudioStrings
+import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
 import com.xrtm8.upscale.ui.theme.StudioColors
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicReference
@@ -96,6 +104,13 @@ fun VideoPreviewStage(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val isAmoledWhite = LocalAmoledWhite.current
+    val accent = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
+    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val cardBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
+
     val targetRatio = options.postFormat.ratioWidth.toFloat() / options.postFormat.ratioHeight.toFloat()
     val (targetW, targetH) = ExportPlanCalculator.targetDimensions(options.postFormat, options.resolution)
     val cropRect = remember(metadata, options.framing, options.cropOffsetX, options.cropOffsetY, targetW, targetH, showResultPreview) {
@@ -183,44 +198,92 @@ fun VideoPreviewStage(
         contentAlignment = Alignment.Center,
     ) {
         if (previewUri == null) {
+            // Athar HomeHeroCard-inspired obsidian + velvet burgundy hero frame
+            val heroGrad = if (isAmoledWhite) {
+                Brush.verticalGradient(listOf(StudioColors.WhiteSurface, StudioColors.WhiteSurfaceElevated))
+            } else {
+                Brush.verticalGradient(listOf(StudioColors.BurgundyGlow, StudioColors.StudioSurface))
+            }
+            val heroBorder = if (isAmoledWhite) {
+                Brush.horizontalGradient(listOf(accent.copy(alpha = 0.45f), StudioColors.WhiteBorder))
+            } else {
+                Brush.horizontalGradient(listOf(accent.copy(alpha = 0.7f), Color(0x33E02447)))
+            }
+
             Box(
                 modifier = Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(targetRatio, matchHeightConstraintsFirst = true)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFF14161B))
-                    .border(1.dp, StudioColors.Hairline, RoundedCornerShape(14.dp)),
+                    .fillMaxWidth(0.92f)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(heroGrad)
+                    .border(1.dp, heroBorder, RoundedCornerShape(22.dp))
+                    .padding(22.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF21242B))
-                            .border(1.dp, StudioColors.Hairline, RoundedCornerShape(12.dp)),
+                            .size(50.dp)
+                            .clip(CircleShape)
+                            .background(accent),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Movie,
+                            imageVector = Icons.Rounded.Add,
                             contentDescription = null,
-                            tint = StudioColors.TextSecondary,
+                            tint = StudioColors.PureWhite,
+                            modifier = Modifier.size(26.dp),
                         )
                     }
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = strings.heroTitle,
+                            color = primaryText,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = strings.heroSubtitle,
+                            color = secondaryText,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+
                     Button(
-                        onClick = onPickVideo,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onPickVideo()
+                        },
                         enabled = !isLocked,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF262A32),
-                            contentColor = StudioColors.TextPrimary,
+                            containerColor = accent,
+                            contentColor = StudioColors.PureWhite,
                         ),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
                     ) {
-                        Text(strings.chooseVideo, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            text = strings.chooseVideo,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = StudioColors.PureWhite,
+                            modifier = Modifier.size(16.dp),
+                        )
                     }
                 }
             }
@@ -239,9 +302,9 @@ fun VideoPreviewStage(
                     modifier = Modifier
                         .weight(1f)
                         .aspectRatio(targetRatio, matchHeightConstraintsFirst = true)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.Black)
-                        .border(1.dp, StudioColors.HairlineStrong, RoundedCornerShape(14.dp)),
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(StudioColors.AmoledBlack)
+                        .border(0.8.dp, if (splitCompareEnabled) StudioColors.BurgundyBorderActive else cardBorder, RoundedCornerShape(16.dp)),
                 ) {
                     val stageWidthPx = with(LocalDensity.current) { maxWidth.toPx() }.coerceAtLeast(1f)
                     val layoutDirection = LocalLayoutDirection.current
@@ -263,7 +326,6 @@ fun VideoPreviewStage(
                         modifier = Modifier.fillMaxSize(),
                     )
 
-                    // Interactive pan gesture for Cover crop framing when split handle is not used.
                     if (!showResultPreview && options.framing == FramingMode.COVER && !isLocked) {
                         Box(
                             modifier = Modifier
@@ -273,7 +335,7 @@ fun VideoPreviewStage(
                                         change.consume()
                                         val dirSign = if (layoutDirection == LayoutDirection.Rtl) -1f else 1f
                                         val dx = -(dragAmount.x * dirSign) / (stageWidthPx * 0.45f)
-                                        val dy = (dragAmount.y) / (stageWidthPx * 0.45f)
+                                        val dy = dragAmount.y / (stageWidthPx * 0.45f)
                                         onCropOffsetChange(
                                             (options.cropOffsetX + dx).coerceIn(-1f, 1f),
                                             (options.cropOffsetY + dy).coerceIn(-1f, 1f),
@@ -283,12 +345,10 @@ fun VideoPreviewStage(
                         )
                     }
 
-                    // Platform Safe Zones overlay
                     if (showSafeZones) {
                         SafeZonesOverlay(postFormat = options.postFormat)
                     }
 
-                    // Split-screen comparison divider & labels (LTR visual coordinates for texture X)
                     if (splitCompareEnabled && !showResultPreview) {
                         val splitXPx = (stageWidthPx * splitPosition).roundToInt()
                         Box(modifier = Modifier.fillMaxSize()) {
@@ -297,7 +357,7 @@ fun VideoPreviewStage(
                                     .offset { IntOffset(splitXPx - 1, 0) }
                                     .width(2.dp)
                                     .fillMaxHeight()
-                                    .background(StudioColors.PrimaryFill.copy(alpha = 0.85f)),
+                                    .background(StudioColors.BurgundyAccent),
                             )
 
                             Row(
@@ -310,15 +370,14 @@ fun VideoPreviewStage(
                                 OverlayPill(strings.after)
                             }
 
-                            // Draggable split handle
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
-                                    .offset { IntOffset((splitXPx - 22), 0) }
-                                    .size(44.dp)
+                                    .offset { IntOffset((splitXPx - 21), 0) }
+                                    .size(42.dp)
                                     .clip(CircleShape)
-                                    .background(StudioColors.GlassElevated)
-                                    .border(1.dp, StudioColors.HairlineStrong, CircleShape)
+                                    .background(StudioColors.GlassBackground)
+                                    .border(1.dp, StudioColors.BurgundyAccent, CircleShape)
                                     .pointerInput(stageWidthPx, layoutDirection) {
                                         detectDragGestures { change, dragAmount ->
                                             change.consume()
@@ -335,8 +394,8 @@ fun VideoPreviewStage(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.CompareArrows,
                                     contentDescription = strings.compare,
-                                    tint = StudioColors.TextPrimary,
-                                    modifier = Modifier.size(20.dp),
+                                    tint = StudioColors.PureWhite,
+                                    modifier = Modifier.size(19.dp),
                                 )
                             }
                         }
@@ -345,7 +404,6 @@ fun VideoPreviewStage(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Minimal playback scrub bar
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -354,6 +412,7 @@ fun VideoPreviewStage(
                 ) {
                     IconButton(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                         },
                         modifier = Modifier.size(34.dp),
@@ -361,7 +420,7 @@ fun VideoPreviewStage(
                         Icon(
                             imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = null,
-                            tint = StudioColors.TextPrimary,
+                            tint = accent,
                             modifier = Modifier.size(20.dp),
                         )
                     }
@@ -374,9 +433,9 @@ fun VideoPreviewStage(
                             exoPlayer.seekTo(seekMs)
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = StudioColors.PrimaryFill,
-                            activeTrackColor = StudioColors.PrimaryFill,
-                            inactiveTrackColor = StudioColors.HairlineStrong,
+                            thumbColor = accent,
+                            activeTrackColor = accent,
+                            inactiveTrackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
                         ),
                         modifier = Modifier.weight(1f),
                     )
@@ -384,7 +443,7 @@ fun VideoPreviewStage(
                     Text(
                         text = formatMs(positionMs),
                         style = MaterialTheme.typography.labelSmall,
-                        color = StudioColors.TextSecondary,
+                        color = secondaryText,
                     )
                 }
             }
@@ -397,11 +456,11 @@ private fun OverlayPill(label: String) {
     Text(
         text = label,
         style = MaterialTheme.typography.labelSmall,
-        color = StudioColors.TextPrimary,
+        color = StudioColors.PureWhite,
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xB30C0E11))
-            .border(1.dp, StudioColors.Hairline, RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(StudioColors.GlassBackground)
+            .border(0.5.dp, StudioColors.StudioBorderSubtle, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }
@@ -410,7 +469,7 @@ private fun OverlayPill(label: String) {
 private fun SafeZonesOverlay(postFormat: PostFormat) {
     Canvas(modifier = Modifier.fillMaxSize()) {
         val dash = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
-        val stroke = Color(0x99E0E1E4)
+        val stroke = Color(0xAAF5F6F8)
         when (postFormat) {
             PostFormat.REEL, PostFormat.STORY -> {
                 val topSafe = size.height * 0.14f

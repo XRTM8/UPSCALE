@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="studio_bg">#0C0E11</color>
-    <color name="studio_surface">#16191F</color>
-    <color name="studio_text">#E0E1E4</color>
+    <color name="studio_bg">#000000</color>
+    <color name="studio_surface">#14151B</color>
+    <color name="studio_text">#F5F6F8</color>
+    <color name="burgundy_accent">#9E1B42</color>
 </resources>
