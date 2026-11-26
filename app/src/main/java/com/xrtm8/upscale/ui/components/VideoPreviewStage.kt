@@ -719,6 +719,7 @@ fun VideoPreviewStage(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -760,6 +761,7 @@ fun VideoPreviewStage(
                         style = MaterialTheme.typography.labelSmall,
                         color = secondaryText,
                     )
+                }
                 }
             }
         }
