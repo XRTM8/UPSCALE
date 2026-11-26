@@ -29,6 +29,8 @@ data class LiveShaderParams(
     val vibrance: Float = 0.10f,
     val exposure: Float = 0f,
     val warmth: Float = 0f,
+    val contrast: Float = 0f,
+    val shadows: Float = 0f,
     /**
      * -1f = apply enhancement across the entire frame (export or full enhanced preview).
      * 0f..1f = live split-screen divider X (left of divider = original, right = enhanced).
@@ -57,8 +59,36 @@ class UpscaleGlEffect(
                 params.clarity <= 0.001f &&
                 params.vibrance <= 0.001f &&
                 abs(params.exposure) <= 0.001f &&
-                abs(params.warmth) <= 0.001f
+                abs(params.warmth) <= 0.001f &&
+                abs(params.contrast) <= 0.001f &&
+                abs(params.shadows) <= 0.001f
             )
+    }
+}
+
+@UnstableApi
+class CleanupGlEffect(
+    private val deblock: Float,
+    private val denoise: Float,
+) : GlEffect {
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
+        return UpscaleShaderProgram(useHdr) {
+            LiveShaderParams(
+                deblock = deblock,
+                denoise = denoise,
+                detail = 0f,
+                clarity = 0f,
+                vibrance = 0f,
+                exposure = 0f,
+                warmth = 0f,
+                contrast = 0f,
+                shadows = 0f,
+            )
+        }
+    }
+
+    override fun isNoOp(inputWidth: Int, inputHeight: Int): Boolean {
+        return deblock <= 0.001f && denoise <= 0.001f
     }
 }
 
@@ -104,6 +134,8 @@ private class UpscaleShaderProgram(
             glProgram.setFloatUniform("uVibrance", if (params.showOriginalOnly) 0f else params.vibrance)
             glProgram.setFloatUniform("uExposure", if (params.showOriginalOnly) 0f else params.exposure)
             glProgram.setFloatUniform("uWarmth", if (params.showOriginalOnly) 0f else params.warmth)
+            glProgram.setFloatUniform("uContrast", if (params.showOriginalOnly) 0f else params.contrast)
+            glProgram.setFloatUniform("uShadows", if (params.showOriginalOnly) 0f else params.shadows)
             glProgram.setFloatUniform("uSplitX", if (params.showOriginalOnly) 2f else params.splitX)
             glProgram.setFloatUniform("uHdrMode", if (useHdr) 1f else 0f)
             glProgram.bindAttributesAndUniforms()
@@ -143,6 +175,8 @@ private class UpscaleShaderProgram(
             uniform float uVibrance;
             uniform float uExposure;
             uniform float uWarmth;
+            uniform float uContrast;
+            uniform float uShadows;
             uniform float uSplitX;
             uniform float uHdrMode;
             varying vec2 vTexSamplingCoord;
@@ -219,10 +253,18 @@ private class UpscaleShaderProgram(
                     }
                 }
 
-                // 3) Exposure & white-balance warmth.
+                // 3) Exposure, shadows recovery, contrast & white-balance warmth.
                 vec3 toned = sharpened;
                 if (abs(uExposure) > 0.001) {
                     toned = toned * exp2(uExposure * 0.55);
+                }
+                if (abs(uShadows) > 0.001) {
+                    float lShad = clamp(luma(toned), 0.0, 1.0);
+                    float shadowMask = pow(1.0 - lShad, 2.0);
+                    toned = toned * (1.0 + uShadows * 0.55 * shadowMask);
+                }
+                if (abs(uContrast) > 0.001) {
+                    toned = (toned - 0.5) * (1.0 + uContrast * 0.45) + 0.5;
                 }
                 if (abs(uWarmth) > 0.001) {
                     float lTone = clamp(luma(toned), 0.0, 1.0);
@@ -275,21 +317,31 @@ object VideoEffectsFactory {
         plan.cropRect?.let { rect ->
             effects += Crop(rect.left, rect.right, rect.bottom, rect.top)
         }
+        // Pass 1: Deblock + edge-aware denoise at source resolution before upscaling
+        // so compression artifacts are cleaned instead of magnified.
+        if (options.deblockStrength > 0.001f || options.denoiseStrength > 0.001f) {
+            effects += CleanupGlEffect(
+                deblock = options.deblockStrength,
+                denoise = options.denoiseStrength,
+            )
+        }
         val layout = if (options.framing == FramingMode.COVER) {
             Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         } else {
             Presentation.LAYOUT_SCALE_TO_FIT
         }
-        // Upscale / frame first so deblock + denoise + CAS detail operate at the target resolution.
+        // Pass 2: Scale to target resolution, then run CAS detail + tone + vibrance at target resolution.
         effects += Presentation.createForWidthAndHeight(plan.targetWidth, plan.targetHeight, layout)
         val params = LiveShaderParams(
-            deblock = options.deblockStrength,
-            denoise = options.denoiseStrength,
+            deblock = 0f,
+            denoise = 0f,
             detail = options.detailStrength,
             clarity = options.clarityStrength,
             vibrance = options.vibranceStrength,
             exposure = options.exposureStrength,
             warmth = options.warmthStrength,
+            contrast = options.contrastStrength,
+            shadows = options.shadowsStrength,
             splitX = -1f,
             showOriginalOnly = false,
         )

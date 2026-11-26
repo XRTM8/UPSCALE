@@ -123,6 +123,7 @@ fun VideoPreviewStage(
     previewZoom: Float,
     showResultPreview: Boolean,
     isLocked: Boolean,
+    seekRequest: Pair<Long, Long>?,
     recentExport: RecentExportItem?,
     strings: StudioStrings,
     onPickVideo: () -> Unit,
@@ -148,8 +149,21 @@ fun VideoPreviewStage(
     val cardBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
     val cardBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
 
-    val targetRatio = options.postFormat.ratioWidth.toFloat() / options.postFormat.ratioHeight.toFloat()
-    val (targetW, targetH) = ExportPlanCalculator.targetDimensions(options.postFormat, options.resolution)
+    val (targetW, targetH) = ExportPlanCalculator.targetDimensions(
+        format = options.postFormat,
+        resolution = options.resolution,
+        sourceWidth = metadata?.displayWidth ?: 0,
+        sourceHeight = metadata?.displayHeight ?: 0,
+    )
+    val targetRatio = if (options.postFormat == PostFormat.ORIGINAL) {
+        if (metadata != null && metadata.displayHeight > 0) {
+            metadata.displayWidth.toFloat() / metadata.displayHeight.toFloat()
+        } else {
+            9f / 16f
+        }
+    } else {
+        options.postFormat.ratioWidth.toFloat() / options.postFormat.ratioHeight.toFloat()
+    }
     val cropRect = remember(metadata, options.framing, options.cropOffsetX, options.cropOffsetY, targetW, targetH, showResultPreview) {
         if (metadata != null && !showResultPreview && options.framing == FramingMode.COVER) {
             ExportPlanCalculator.computeCoverCrop(
@@ -183,6 +197,15 @@ fun VideoPreviewStage(
         if (previewZoom <= 1.01f) {
             zoomPanX = 0f
             zoomPanY = 0f
+        }
+    }
+
+    LaunchedEffect(seekRequest) {
+        val req = seekRequest ?: return@LaunchedEffect
+        if (previewUri != null) {
+            exoPlayer.pause()
+            exoPlayer.seekTo(req.first.coerceAtLeast(0L))
+            positionMs = req.first.coerceAtLeast(0L)
         }
     }
 
@@ -375,6 +398,7 @@ fun VideoPreviewStage(
                             quickFormats.forEach { format ->
                                 val selected = options.postFormat == format
                                 val label = when (format) {
+                                    PostFormat.ORIGINAL -> strings.originalFormat
                                     PostFormat.REEL -> "${strings.reel} · \u20669:16\u2069"
                                     PostFormat.FEED -> "${strings.feed} · \u20664:5\u2069"
                                     PostFormat.LANDSCAPE -> strings.landscape
@@ -807,7 +831,7 @@ private fun SafeZonesOverlay(platform: PlatformPreset, postFormat: PostFormat) {
                 drawLine(stroke, Offset(0f, topSafe), Offset(size.width, topSafe), 2f, pathEffect = dash)
                 drawLine(stroke, Offset(0f, bottomSafe), Offset(size.width, bottomSafe), 2f, pathEffect = dash)
             }
-            PostFormat.FEED, PostFormat.LANDSCAPE -> {
+            PostFormat.ORIGINAL, PostFormat.FEED, PostFormat.LANDSCAPE -> {
                 val insetX = size.width * 0.06f
                 val insetY = size.height * 0.08f
                 drawLine(stroke, Offset(insetX, insetY), Offset(size.width - insetX, insetY), 2f, pathEffect = dash)

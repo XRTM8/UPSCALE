@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Button
@@ -34,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -60,6 +63,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.xrtm8.upscale.engine.MediaInspector
 import com.xrtm8.upscale.engine.RecentExportItem
+import com.xrtm8.upscale.model.AudioQuality
+import com.xrtm8.upscale.model.BatchItemStatus
+import com.xrtm8.upscale.model.BatchQueueItem
+import com.xrtm8.upscale.model.CustomPreset
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
@@ -84,9 +91,13 @@ fun ProcessingBottomSheet(
     options: ExportOptions,
     source: VideoMetadata?,
     capabilities: DeviceCapabilities,
+    customPresets: List<CustomPreset>,
     strings: StudioStrings,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
     onApplyPreset: (EnhancementPreset) -> Unit,
+    onApplyCustomPreset: (CustomPreset) -> Unit,
+    onSaveCustomPreset: (String) -> Unit,
+    onDeleteCustomPreset: (String) -> Unit,
     onResetFilters: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -136,8 +147,68 @@ fun ProcessingBottomSheet(
                 }
             }
 
+            var showSavePresetRow by remember { mutableStateOf(false) }
+            var newPresetName by remember { mutableStateOf("") }
+
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(strings.presets, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(strings.presets, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(StudioColors.BurgundyMuted)
+                            .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
+                            .clickable { showSavePresetRow = !showSavePresetRow }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.BookmarkAdd,
+                            contentDescription = null,
+                            tint = accentText,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = strings.savePreset,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = accentText,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+                if (showSavePresetRow) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = newPresetName,
+                            onValueChange = { newPresetName = it.take(24) },
+                            placeholder = { Text(strings.presetNameHint, style = MaterialTheme.typography.bodySmall) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Button(
+                            onClick = {
+                                if (newPresetName.isNotBlank()) {
+                                    onSaveCustomPreset(newPresetName)
+                                    newPresetName = ""
+                                    showSavePresetRow = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = accentFill),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Text(strings.save, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -162,6 +233,43 @@ fun ProcessingBottomSheet(
                         )
                     }
                 }
+                if (customPresets.isNotEmpty()) {
+                    Text(strings.customPresets, style = MaterialTheme.typography.labelSmall, color = secondaryText)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        customPresets.forEach { custom ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated)
+                                    .border(0.5.dp, borderColor, RoundedCornerShape(10.dp))
+                                    .clickable { onApplyCustomPreset(custom) }
+                                    .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                            ) {
+                                Text(
+                                    text = custom.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = primaryText,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                IconButton(
+                                    onClick = { onDeleteCustomPreset(custom.id) },
+                                    modifier = Modifier.size(22.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = null,
+                                        tint = secondaryText,
+                                        modifier = Modifier.size(13.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -177,6 +285,12 @@ fun ProcessingBottomSheet(
                         label = strings.balanced,
                         selected = options.quality == QualityMode.BALANCED,
                         onClick = { onUpdateOptions { it.copy(quality = QualityMode.BALANCED) } },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ChoiceChip(
+                        label = strings.compact,
+                        selected = options.quality == QualityMode.COMPACT,
+                        onClick = { onUpdateOptions { it.copy(quality = QualityMode.COMPACT) } },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -251,6 +365,30 @@ fun ProcessingBottomSheet(
                 decreaseDescription = strings.decrease,
                 increaseDescription = strings.increase,
             )
+            StudioSlider(
+                title = strings.contrast,
+                value = options.contrastStrength,
+                valueRange = -1f..1f,
+                isBipolar = true,
+                step = 0.08f,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, contrastStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
+            StudioSlider(
+                title = strings.shadows,
+                value = options.shadowsStrength,
+                valueRange = -1f..1f,
+                isBipolar = true,
+                step = 0.08f,
+                onValueChange = { v ->
+                    onUpdateOptions { it.copy(preset = EnhancementPreset.CUSTOM, shadowsStrength = v) }
+                },
+                decreaseDescription = strings.decrease,
+                increaseDescription = strings.increase,
+            )
 
             Text(
                 text = strings.gpuEngineNote,
@@ -301,6 +439,7 @@ fun OutputBottomSheet(
     plan: ExportPlan?,
     strings: StudioStrings,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
+    onSeekPreview: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -356,6 +495,7 @@ fun OutputBottomSheet(
                 ) {
                     allowedFormats.forEach { format ->
                         val title = when (format) {
+                            PostFormat.ORIGINAL -> strings.originalFormat
                             PostFormat.REEL -> strings.reel
                             PostFormat.FEED -> strings.feed
                             PostFormat.STORY -> strings.story
@@ -376,7 +516,13 @@ fun OutputBottomSheet(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                     Text(strings.resolution, style = MaterialTheme.typography.bodySmall, color = secondaryText)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ChoiceChip(
+                            label = strings.originalFormat,
+                            selected = options.resolution == OutputResolution.SOURCE,
+                            onClick = { onUpdateOptions { it.copy(resolution = OutputResolution.SOURCE) } },
+                            modifier = Modifier.weight(1f),
+                        )
                         ChoiceChip(
                             label = "1080p",
                             selected = options.resolution == OutputResolution.FHD_1080P,
@@ -484,6 +630,39 @@ fun OutputBottomSheet(
                             label = strings.muteAudio,
                             selected = options.muteAudio,
                             onClick = { onUpdateOptions { it.copy(muteAudio = true) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (!options.muteAudio) {
+                        Text(strings.audioQualityLabel, style = MaterialTheme.typography.labelSmall, color = secondaryText)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            AudioQuality.entries.forEach { aq ->
+                                ChoiceChip(
+                                    label = aq.label,
+                                    selected = options.audioQuality == aq,
+                                    onClick = { onUpdateOptions { it.copy(audioQuality = aq) } },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (source?.isHdr == true) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(strings.hdrModeLabel, style = MaterialTheme.typography.bodySmall, color = secondaryText)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ChoiceChip(
+                            label = strings.hdrToneMapSdr,
+                            selected = !options.keepHdr,
+                            onClick = { onUpdateOptions { it.copy(keepHdr = false) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                        ChoiceChip(
+                            label = strings.hdrKeepOriginal,
+                            selected = options.keepHdr,
+                            onClick = { onUpdateOptions { it.copy(keepHdr = true) } },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -613,8 +792,10 @@ fun OutputBottomSheet(
                         onValueChange = { range ->
                             val newStart = range.start.toLong().coerceIn(0L, source.durationMs - 500L)
                             val newEnd = range.endInclusive.toLong().coerceIn(newStart + 500L, source.durationMs)
+                            val seekTarget = if (newStart != draftStartMs) newStart else newEnd
                             draftStartMs = newStart
                             draftEndMs = newEnd
+                            onSeekPreview(seekTarget)
                         },
                         onValueChangeFinished = {
                             onUpdateOptions { it.copy(trimStartMs = draftStartMs, trimEndMs = draftEndMs) }
@@ -828,5 +1009,162 @@ private fun ChoiceChip(
             color = textColor,
             maxLines = 1,
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BatchQueueBottomSheet(
+    items: List<BatchQueueItem>,
+    isBatchRunning: Boolean,
+    strings: StudioStrings,
+    onAddVideos: () -> Unit,
+    onRemoveItem: (String) -> Unit,
+    onClearDone: () -> Unit,
+    onStartBatch: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val isAmoledWhite = LocalAmoledWhite.current
+    val sheetBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
+    val itemBg = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated
+    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
+    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
+    val borderColor = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
+    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
+    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = sheetBg,
+        contentColor = primaryText,
+        scrimColor = Color(0x99000000),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(strings.batchQueue, style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (items.any { it.status == BatchItemStatus.COMPLETED || it.status == BatchItemStatus.FAILED || it.status == BatchItemStatus.CANCELLED }) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(itemBg)
+                                .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isBatchRunning, onClick = onClearDone)
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
+                        ) {
+                            Text(strings.clearDone, style = MaterialTheme.typography.labelSmall, color = secondaryText)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(StudioColors.BurgundyMuted)
+                            .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
+                            .clickable(enabled = !isBatchRunning, onClick = onAddVideos)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        Text(strings.addVideos, style = MaterialTheme.typography.labelSmall, color = accentText, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            if (items.isEmpty()) {
+                Text(
+                    text = strings.batchEmpty,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = secondaryText,
+                    modifier = Modifier.padding(vertical = 18.dp),
+                )
+            } else {
+                items.forEach { item ->
+                    val statusLabel = when (item.status) {
+                        BatchItemStatus.QUEUED -> strings.batchQueued
+                        BatchItemStatus.RUNNING -> strings.batchRunning
+                        BatchItemStatus.COMPLETED -> strings.batchCompleted
+                        BatchItemStatus.FAILED -> strings.batchFailed
+                        BatchItemStatus.CANCELLED -> strings.exportCancelled
+                    }
+                    val statusColor = when (item.status) {
+                        BatchItemStatus.COMPLETED -> StudioColors.Success
+                        BatchItemStatus.FAILED -> StudioColors.Danger
+                        BatchItemStatus.RUNNING -> accentText
+                        else -> secondaryText
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(itemBg)
+                            .border(0.5.dp, borderColor, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = item.metadata.name,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = primaryText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val sizeInfo = if (item.outputSizeBytes > 0L) {
+                                "${formatSizeMb(item.metadata.sizeBytes)} → ${formatSizeMb(item.outputSizeBytes)}"
+                            } else {
+                                formatSizeMb(item.metadata.sizeBytes)
+                            }
+                            Text(
+                                text = "\u2066${item.metadata.displayWidth}×${item.metadata.displayHeight} · $sizeInfo\u2069 · $statusLabel",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = statusColor,
+                            )
+                        }
+                        if (!isBatchRunning && item.status != BatchItemStatus.RUNNING) {
+                            IconButton(
+                                onClick = { onRemoveItem(item.id) },
+                                modifier = Modifier.size(30.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = strings.close,
+                                    tint = secondaryText,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (items.any { it.status == BatchItemStatus.QUEUED }) {
+                Button(
+                    onClick = onStartBatch,
+                    enabled = !isBatchRunning,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accentFill,
+                        contentColor = StudioColors.PureWhite,
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                ) {
+                    Text(strings.startBatch, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
     }
 }

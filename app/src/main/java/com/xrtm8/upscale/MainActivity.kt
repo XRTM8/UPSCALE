@@ -61,6 +61,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val pickBatchVideosLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.PickMultipleVisualMedia(10),
+            ) { uris ->
+                if (uris.isNotEmpty()) {
+                    viewModel.enqueueBatchVideos(uris)
+                }
+            }
+
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission(),
             ) {
@@ -97,6 +105,9 @@ class MainActivity : ComponentActivity() {
                     onSetShowResult = viewModel::setShowResultPreview,
                     onUpdateOptions = viewModel::updateOptions,
                     onApplyPreset = viewModel::applyPreset,
+                    onApplyCustomPreset = viewModel::applyCustomPreset,
+                    onSaveCustomPreset = viewModel::saveCustomPreset,
+                    onDeleteCustomPreset = viewModel::deleteCustomPreset,
                     onResetFilters = viewModel::resetEnhancementDefaults,
                     onSaveSnapshot = viewModel::saveSnapshot,
                     onSnapshotFailed = viewModel::reportSnapshotFailed,
@@ -110,6 +121,15 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     onCancelExport = viewModel::cancelExport,
+                    onPickBatchVideos = {
+                        pickBatchVideosLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly),
+                        )
+                    },
+                    onRemoveBatchItem = viewModel::removeBatchItem,
+                    onClearDoneBatch = viewModel::clearCompletedBatchItems,
+                    onStartBatchExport = viewModel::startBatchExport,
+                    onSeekPreview = viewModel::requestPreviewSeek,
                     onOpenOutput = viewModel::openCompletedOutput,
                     onShareOutput = viewModel::shareCompletedOutput,
                     onOpenRecent = { item -> viewModel.openVideoUri(item.uriString) },

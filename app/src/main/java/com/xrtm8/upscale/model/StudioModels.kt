@@ -15,6 +15,7 @@ enum class PlatformPreset(val label: String) {
 }
 
 enum class PostFormat(val aspectLabel: String, val ratioWidth: Int, val ratioHeight: Int) {
+    ORIGINAL("Original", 0, 0),
     REEL("9:16", 9, 16),
     FEED("4:5", 4, 5),
     STORY("9:16", 9, 16),
@@ -24,6 +25,7 @@ enum class PostFormat(val aspectLabel: String, val ratioWidth: Int, val ratioHei
 enum class QualityMode {
     MAXIMUM,
     BALANCED,
+    COMPACT,
 }
 
 enum class FramingMode {
@@ -32,6 +34,7 @@ enum class FramingMode {
 }
 
 enum class OutputResolution(val shortEdge: Int, val label: String) {
+    SOURCE(0, "Original"),
     FHD_1080P(1080, "1080p"),
     UHD_4K(2160, "4K"),
 }
@@ -46,6 +49,29 @@ enum class TargetFps(val fps: Int?) {
     FPS_30(30),
     FPS_60(60),
 }
+
+enum class AudioQuality(val bitrateBps: Int, val label: String) {
+    AAC_128(128_000, "128k"),
+    AAC_192(192_000, "192k"),
+    AAC_320(320_000, "320k"),
+}
+
+enum class BatchItemStatus {
+    QUEUED,
+    RUNNING,
+    COMPLETED,
+    FAILED,
+    CANCELLED,
+}
+
+data class BatchQueueItem(
+    val id: String,
+    val metadata: VideoMetadata,
+    val status: BatchItemStatus = BatchItemStatus.QUEUED,
+    val outputUriString: String? = null,
+    val outputSizeBytes: Long = 0L,
+    val errorMessage: String? = null,
+)
 
 enum class EnhancementPreset {
     NATURAL,
@@ -101,10 +127,25 @@ data class DeviceCapabilities(
     val isThermallyThrottled: Boolean get() = thermalStatus >= 3 // PowerManager.THERMAL_STATUS_SEVERE
 
     fun supportsHevcFor(resolution: OutputResolution): Boolean = when (resolution) {
+        OutputResolution.SOURCE -> supports1080pHevc || supports4kHevc
         OutputResolution.FHD_1080P -> supports1080pHevc || supports4kHevc
         OutputResolution.UHD_4K -> supports4kHevc
     }
 }
+
+data class CustomPreset(
+    val id: String,
+    val name: String,
+    val deblockStrength: Float,
+    val denoiseStrength: Float,
+    val detailStrength: Float,
+    val clarityStrength: Float,
+    val vibranceStrength: Float,
+    val exposureStrength: Float,
+    val warmthStrength: Float,
+    val contrastStrength: Float,
+    val shadowsStrength: Float,
+)
 
 data class ExportOptions(
     val platform: PlatformPreset = PlatformPreset.INSTAGRAM,
@@ -122,12 +163,29 @@ data class ExportOptions(
     val vibranceStrength: Float = 0.10f,
     val exposureStrength: Float = 0f,
     val warmthStrength: Float = 0f,
+    val contrastStrength: Float = 0f,
+    val shadowsStrength: Float = 0f,
     val muteAudio: Boolean = false,
+    val audioQuality: AudioQuality = AudioQuality.AAC_192,
+    val keepHdr: Boolean = false,
     val cropOffsetX: Float = 0f,
     val cropOffsetY: Float = 0f,
     val trimStartMs: Long = 0L,
     val trimEndMs: Long? = null,
 ) {
+    fun withCustomPreset(custom: CustomPreset): ExportOptions = copy(
+        preset = EnhancementPreset.CUSTOM,
+        deblockStrength = custom.deblockStrength.coerceIn(0f, 1f),
+        denoiseStrength = custom.denoiseStrength.coerceIn(0f, 1f),
+        detailStrength = custom.detailStrength.coerceIn(0f, 1f),
+        clarityStrength = custom.clarityStrength.coerceIn(0f, 1f),
+        vibranceStrength = custom.vibranceStrength.coerceIn(0f, 1f),
+        exposureStrength = custom.exposureStrength.coerceIn(-1f, 1f),
+        warmthStrength = custom.warmthStrength.coerceIn(-1f, 1f),
+        contrastStrength = custom.contrastStrength.coerceIn(-1f, 1f),
+        shadowsStrength = custom.shadowsStrength.coerceIn(-1f, 1f),
+    )
+
     fun withPreset(targetPreset: EnhancementPreset): ExportOptions = when (targetPreset) {
         EnhancementPreset.NATURAL -> copy(
             preset = EnhancementPreset.NATURAL,
@@ -138,6 +196,8 @@ data class ExportOptions(
             vibranceStrength = 0.10f,
             exposureStrength = 0f,
             warmthStrength = 0f,
+            contrastStrength = 0f,
+            shadowsStrength = 0f,
         )
         EnhancementPreset.CRISP_TEXT -> copy(
             preset = EnhancementPreset.CRISP_TEXT,
@@ -148,6 +208,8 @@ data class ExportOptions(
             vibranceStrength = 0.05f,
             exposureStrength = 0.05f,
             warmthStrength = 0f,
+            contrastStrength = 0.12f,
+            shadowsStrength = 0.05f,
         )
         EnhancementPreset.LOW_LIGHT -> copy(
             preset = EnhancementPreset.LOW_LIGHT,
@@ -158,6 +220,8 @@ data class ExportOptions(
             vibranceStrength = 0.15f,
             exposureStrength = 0.18f,
             warmthStrength = 0.05f,
+            contrastStrength = 0.05f,
+            shadowsStrength = 0.28f,
         )
         EnhancementPreset.CINEMA -> copy(
             preset = EnhancementPreset.CINEMA,
@@ -168,6 +232,8 @@ data class ExportOptions(
             vibranceStrength = 0.22f,
             exposureStrength = -0.04f,
             warmthStrength = 0.14f,
+            contrastStrength = 0.16f,
+            shadowsStrength = -0.08f,
         )
         EnhancementPreset.CUSTOM -> copy(preset = EnhancementPreset.CUSTOM)
     }
@@ -200,6 +266,8 @@ data class ExportOptions(
             vibranceStrength = vibranceStrength.coerceIn(0f, 1f),
             exposureStrength = exposureStrength.coerceIn(-1f, 1f),
             warmthStrength = warmthStrength.coerceIn(-1f, 1f),
+            contrastStrength = contrastStrength.coerceIn(-1f, 1f),
+            shadowsStrength = shadowsStrength.coerceIn(-1f, 1f),
             cropOffsetX = cropOffsetX.coerceIn(-1f, 1f),
             cropOffsetY = cropOffsetY.coerceIn(-1f, 1f),
         )
@@ -212,15 +280,18 @@ data class ExportOptions(
                 PostFormat.FEED,
                 PostFormat.STORY,
                 PostFormat.LANDSCAPE,
+                PostFormat.ORIGINAL,
             )
             PlatformPreset.TIKTOK -> listOf(
                 PostFormat.REEL,
                 PostFormat.STORY,
                 PostFormat.LANDSCAPE,
+                PostFormat.ORIGINAL,
             )
             PlatformPreset.YOUTUBE -> listOf(
                 PostFormat.REEL,
                 PostFormat.LANDSCAPE,
+                PostFormat.ORIGINAL,
             )
         }
     }
@@ -240,6 +311,7 @@ data class ExportPlan(
     val useHevc: Boolean,
     val toneMapHdrToSdr: Boolean,
     val muteAudio: Boolean,
+    val audioBitrateBps: Int = 192_000,
     val targetFps: Int?,
     val trimStartMs: Long,
     val trimEndMs: Long,
@@ -247,7 +319,7 @@ data class ExportPlan(
     val cropRect: NormalizedCropRect?,
 ) {
     val estimatedBytes: Long
-        get() = ((bitrateBps.toLong() + if (muteAudio) 0L else 192_000L) * effectiveDurationMs) / 8_000L
+        get() = ((bitrateBps.toLong() + if (muteAudio) 0L else audioBitrateBps.toLong()) * effectiveDurationMs) / 8_000L
 }
 
 sealed interface ExportState {
@@ -292,7 +364,12 @@ object ExportPlanCalculator {
             )
         }
         val options = rawOptions.normalizedForPlatform(capabilities)
-        val (width, height) = targetDimensions(options.postFormat, options.resolution)
+        val (width, height) = targetDimensions(
+            format = options.postFormat,
+            resolution = options.resolution,
+            sourceWidth = source.displayWidth,
+            sourceHeight = source.displayHeight,
+        )
 
         val trimStart = options.trimStartMs.coerceIn(0L, (source.durationMs - 500L).coerceAtLeast(0L))
         val rawEnd = options.trimEndMs ?: source.durationMs
@@ -301,7 +378,14 @@ object ExportPlanCalculator {
 
         val useHevc = options.codec == VideoCodecChoice.HEVC &&
             capabilities.supportsHevcFor(options.resolution)
-        val bitrate = computeBitrate(options.resolution, options.quality, useHevc)
+        val bitrate = computeBitrate(
+            resolution = options.resolution,
+            quality = options.quality,
+            hevc = useHevc,
+            source = source,
+            targetWidth = width,
+            targetHeight = height,
+        )
 
         val requestedFps = options.targetFps.fps
         val effectiveTargetFps = if (requestedFps != null && source.frameRate > requestedFps + 1.0) {
@@ -323,13 +407,15 @@ object ExportPlanCalculator {
             null
         }
 
+        val muteAudio = options.muteAudio || !source.hasAudio
         val plan = ExportPlan(
             targetWidth = width,
             targetHeight = height,
             bitrateBps = bitrate,
             useHevc = useHevc,
-            toneMapHdrToSdr = source.isHdr,
-            muteAudio = options.muteAudio || !source.hasAudio,
+            toneMapHdrToSdr = source.isHdr && !options.keepHdr,
+            muteAudio = muteAudio,
+            audioBitrateBps = if (muteAudio) 0 else options.audioQuality.bitrateBps,
             targetFps = effectiveTargetFps,
             trimStartMs = trimStart,
             trimEndMs = trimEnd,
@@ -370,9 +456,38 @@ object ExportPlanCalculator {
         return "UPSCALE_${base}_${plat}_${fmt}_${res}_$suffix.mp4"
     }
 
-    fun targetDimensions(format: PostFormat, resolution: OutputResolution): Pair<Int, Int> {
-        val shortEdge = resolution.shortEdge
+    fun targetDimensions(
+        format: PostFormat,
+        resolution: OutputResolution,
+        sourceWidth: Int = 0,
+        sourceHeight: Int = 0,
+    ): Pair<Int, Int> {
+        val shortEdge = when (resolution) {
+            OutputResolution.SOURCE -> {
+                if (sourceWidth > 0 && sourceHeight > 0) {
+                    (minOf(sourceWidth, sourceHeight) and -2).coerceAtLeast(240)
+                } else {
+                    1080
+                }
+            }
+            else -> resolution.shortEdge
+        }
         return when (format) {
+            PostFormat.ORIGINAL -> {
+                if (sourceWidth > 0 && sourceHeight > 0) {
+                    if (sourceWidth <= sourceHeight) {
+                        val w = shortEdge and -2
+                        val h = ((shortEdge.toDouble() * sourceHeight / sourceWidth).roundToInt() and -2).coerceAtLeast(240)
+                        w to h
+                    } else {
+                        val h = shortEdge and -2
+                        val w = ((shortEdge.toDouble() * sourceWidth / sourceHeight).roundToInt() and -2).coerceAtLeast(240)
+                        w to h
+                    }
+                } else {
+                    shortEdge to (shortEdge * 16 / 9)
+                }
+            }
             PostFormat.REEL, PostFormat.STORY -> shortEdge to (shortEdge * 16 / 9)
             PostFormat.FEED -> shortEdge to ((shortEdge * 5f / 4f).roundToInt() and -2)
             PostFormat.LANDSCAPE -> (shortEdge * 16 / 9) to shortEdge
@@ -383,12 +498,69 @@ object ExportPlanCalculator {
         resolution: OutputResolution,
         quality: QualityMode,
         hevc: Boolean,
+        source: VideoMetadata? = null,
+        targetWidth: Int = 0,
+        targetHeight: Int = 0,
     ): Int {
-        val base = when (resolution) {
-            OutputResolution.FHD_1080P -> if (quality == QualityMode.MAXIMUM) 18_000_000 else 10_000_000
-            OutputResolution.UHD_4K -> if (quality == QualityMode.MAXIMUM) 42_000_000 else 26_000_000
+        val effectiveRes = if (resolution == OutputResolution.SOURCE) {
+            val minEdge = minOf(targetWidth, targetHeight)
+            if (minEdge >= 1800) OutputResolution.UHD_4K else OutputResolution.FHD_1080P
+        } else {
+            resolution
         }
-        return if (hevc) (base * 0.78).roundToInt() else base
+        val ceilingBase = when (effectiveRes) {
+            OutputResolution.SOURCE, OutputResolution.FHD_1080P -> when (quality) {
+                QualityMode.MAXIMUM -> 10_000_000
+                QualityMode.BALANCED -> 6_000_000
+                QualityMode.COMPACT -> 3_500_000
+            }
+            OutputResolution.UHD_4K -> when (quality) {
+                QualityMode.MAXIMUM -> 24_000_000
+                QualityMode.BALANCED -> 16_000_000
+                QualityMode.COMPACT -> 9_000_000
+            }
+        }
+        val ceilingBps = if (hevc) (ceilingBase * 0.78).roundToInt() else ceilingBase
+
+        if (source == null || source.sizeBytes <= 0L || source.durationMs <= 0L) {
+            return ceilingBps
+        }
+
+        val sourceTotalBps = (source.sizeBytes * 8_000.0) / source.durationMs.toDouble()
+        val approxAudioBps = if (source.hasAudio) 128_000.0 else 0.0
+        val sourceVideoBps = (sourceTotalBps - approxAudioBps).coerceAtLeast(300_000.0)
+
+        val sourcePixels = (source.displayWidth.toDouble() * source.displayHeight.toDouble()).coerceAtLeast(1.0)
+        val targetPixels = if (targetWidth > 0 && targetHeight > 0) {
+            targetWidth.toDouble() * targetHeight.toDouble()
+        } else {
+            sourcePixels
+        }
+        val upscaleRatio = (targetPixels / sourcePixels).coerceIn(0.5, 4.0)
+
+        val multiplier = if (quality == QualityMode.COMPACT) {
+            if (upscaleRatio <= 1.05) 0.72 else (0.72 * kotlin.math.sqrt(upscaleRatio)).coerceAtMost(1.05)
+        } else if (upscaleRatio <= 1.05) {
+            if (quality == QualityMode.MAXIMUM) 1.25 else 1.05
+        } else {
+            val scale = kotlin.math.sqrt(upscaleRatio)
+            if (quality == QualityMode.MAXIMUM) {
+                (1.25 * scale).coerceAtMost(1.8)
+            } else {
+                (1.05 * scale).coerceAtMost(1.5)
+            }
+        }
+
+        var sourceCappedBps = sourceVideoBps * multiplier
+        if (hevc && !source.mimeType.contains("hevc", ignoreCase = true) && !source.mimeType.contains("h265", ignoreCase = true)) {
+            sourceCappedBps *= 0.78
+        }
+
+        val minFloor = when (effectiveRes) {
+            OutputResolution.SOURCE, OutputResolution.FHD_1080P -> if (quality == QualityMode.COMPACT) 800_000 else 1_200_000
+            OutputResolution.UHD_4K -> if (quality == QualityMode.COMPACT) 2_500_000 else 4_000_000
+        }
+        return sourceCappedBps.roundToInt().coerceIn(minFloor.coerceAtMost(ceilingBps), ceilingBps)
     }
 
     fun computeCoverCrop(

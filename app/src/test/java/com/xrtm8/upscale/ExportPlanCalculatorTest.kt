@@ -1,6 +1,7 @@
 package com.xrtm8.upscale
 
 import com.xrtm8.upscale.engine.ExportRepository
+import com.xrtm8.upscale.model.AudioQuality
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
@@ -219,5 +220,108 @@ class ExportPlanCalculatorTest {
 
         val mid = com.xrtm8.upscale.model.ExportState.Running("job", 0.5f, 5_000L, 10_000L, "out.mp4", 1_000L)
         assertEquals(10L, mid.estimatedRemainingSeconds(11_000L))
+    }
+
+    @Test
+    fun compactSourceVideoDoesNotBloatOutputSize() {
+        // 6 MB over 16s (~3 Mbps) at 1080p should stay near source size instead of bloating to 36 MB.
+        val sixMbClip = sampleVideo(
+            width = 1080,
+            height = 1920,
+            durationMs = 16_000L,
+        ).copy(sizeBytes = 6L * 1024L * 1024L)
+
+        val maxPlan = ExportPlanCalculator.buildPlan(
+            sixMbClip,
+            ExportOptions(quality = QualityMode.MAXIMUM, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        assertTrue("Expected < 10 MB, got ${maxPlan.estimatedBytes}", maxPlan.estimatedBytes < 10L * 1024L * 1024L)
+
+        val balancedPlan = ExportPlanCalculator.buildPlan(
+            sixMbClip,
+            ExportOptions(quality = QualityMode.BALANCED, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        assertTrue(balancedPlan.estimatedBytes <= maxPlan.estimatedBytes)
+        assertTrue("Expected < 8 MB, got ${balancedPlan.estimatedBytes}", balancedPlan.estimatedBytes < 8L * 1024L * 1024L)
+    }
+
+    @Test
+    fun upscalingLowResSourceAllowsModerateBitrateHeadroomWithoutBloat() {
+        val sixMb720p = sampleVideo(
+            width = 720,
+            height = 1280,
+            durationMs = 16_000L,
+        ).copy(sizeBytes = 6L * 1024L * 1024L)
+
+        val plan = ExportPlanCalculator.buildPlan(
+            sixMb720p,
+            ExportOptions(quality = QualityMode.MAXIMUM, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        assertTrue(plan.bitrateBps in 3_500_000..6_500_000)
+        assertTrue(plan.estimatedBytes < 14L * 1024L * 1024L)
+    }
+
+    @Test
+    fun highBitrateSourceIsCappedAtResolutionCeiling() {
+        val highBitrate4k = sampleVideo(
+            width = 2160,
+            height = 3840,
+            durationMs = 10_000L,
+        ).copy(sizeBytes = 80L * 1024L * 1024L)
+
+        val plan1080 = ExportPlanCalculator.buildPlan(
+            highBitrate4k,
+            ExportOptions(quality = QualityMode.MAXIMUM, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        assertEquals(10_000_000, plan1080.bitrateBps)
+    }
+
+    @Test
+    fun originalPostFormatAndSourceResolutionPreserveSourceDimensions() {
+        val wide720p = sampleVideo(width = 1280, height = 720, durationMs = 10_000L)
+        val plan = ExportPlanCalculator.buildPlan(
+            wide720p,
+            ExportOptions(
+                postFormat = PostFormat.ORIGINAL,
+                resolution = OutputResolution.SOURCE,
+            ),
+            capableDevice(),
+        ).getOrThrow()
+        assertEquals(1280, plan.targetWidth)
+        assertEquals(720, plan.targetHeight)
+    }
+
+    @Test
+    fun compactQualityReducesBitrateBelowSource() {
+        val sixMbClip = sampleVideo(width = 1080, height = 1920, durationMs = 16_000L)
+            .copy(sizeBytes = 6L * 1024L * 1024L)
+        val compactPlan = ExportPlanCalculator.buildPlan(
+            sixMbClip,
+            ExportOptions(quality = QualityMode.COMPACT, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        val balancedPlan = ExportPlanCalculator.buildPlan(
+            sixMbClip,
+            ExportOptions(quality = QualityMode.BALANCED, resolution = OutputResolution.FHD_1080P),
+            capableDevice(),
+        ).getOrThrow()
+        assertTrue(compactPlan.bitrateBps < balancedPlan.bitrateBps)
+        assertTrue(compactPlan.estimatedBytes < 6L * 1024L * 1024L)
+    }
+
+    @Test
+    fun audioQualityAndKeepHdrAreReflectedInExportPlan() {
+        val hdrVideo = sampleVideo(isHdr = true)
+        val plan = ExportPlanCalculator.buildPlan(
+            hdrVideo,
+            ExportOptions(audioQuality = AudioQuality.AAC_320, keepHdr = true),
+            capableDevice(),
+        ).getOrThrow()
+        assertEquals(320_000, plan.audioBitrateBps)
+        assertFalse(plan.toneMapHdrToSdr)
     }
 }

@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.AudioEncoderSettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
@@ -139,14 +140,22 @@ class ExportForegroundService : Service() {
         tempFile = file
 
         val videoMime = if (request.plan.useHevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
-        val encoderFactory = DefaultEncoderFactory.Builder(this)
+        val encoderFactoryBuilder = DefaultEncoderFactory.Builder(this)
             .setEnableFallback(true)
             .setRequestedVideoEncoderSettings(
                 VideoEncoderSettings.Builder()
                     .setBitrate(request.plan.bitrateBps)
+                    .setBitrateMode(android.media.MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
                     .build(),
             )
-            .build()
+        if (!request.plan.muteAudio && request.plan.audioBitrateBps > 0) {
+            encoderFactoryBuilder.setRequestedAudioEncoderSettings(
+                AudioEncoderSettings.Builder()
+                    .setBitrate(request.plan.audioBitrateBps)
+                    .build(),
+            )
+        }
+        val encoderFactory = encoderFactoryBuilder.build()
 
         val activeTransformer = Transformer.Builder(this)
             .setEncoderFactory(encoderFactory)

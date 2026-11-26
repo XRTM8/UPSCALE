@@ -2,6 +2,8 @@ package com.xrtm8.upscale.data
 
 import android.content.Context
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.AudioQuality
+import com.xrtm8.upscale.model.CustomPreset
 import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.FramingMode
@@ -11,6 +13,8 @@ import com.xrtm8.upscale.model.PostFormat
 import com.xrtm8.upscale.model.QualityMode
 import com.xrtm8.upscale.model.TargetFps
 import com.xrtm8.upscale.model.VideoCodecChoice
+import org.json.JSONArray
+import org.json.JSONObject
 
 class PreferencesStore(context: Context) {
     private val prefs = context.getSharedPreferences("upscale_studio_prefs", Context.MODE_PRIVATE)
@@ -58,7 +62,11 @@ class PreferencesStore(context: Context) {
         vibranceStrength = prefs.getFloat("vibranceStrength", 0.10f).coerceIn(0f, 1f),
         exposureStrength = prefs.getFloat("exposureStrength", 0f).coerceIn(-1f, 1f),
         warmthStrength = prefs.getFloat("warmthStrength", 0f).coerceIn(-1f, 1f),
+        contrastStrength = prefs.getFloat("contrastStrength", 0f).coerceIn(-1f, 1f),
+        shadowsStrength = prefs.getFloat("shadowsStrength", 0f).coerceIn(-1f, 1f),
         muteAudio = prefs.getBoolean("muteAudio", false),
+        audioQuality = enumValueOrDefault(prefs.getString("audioQuality", null), AudioQuality.AAC_192),
+        keepHdr = prefs.getBoolean("keepHdr", false),
     )
 
     fun saveOptions(options: ExportOptions) {
@@ -78,8 +86,59 @@ class PreferencesStore(context: Context) {
             .putFloat("vibranceStrength", options.vibranceStrength)
             .putFloat("exposureStrength", options.exposureStrength)
             .putFloat("warmthStrength", options.warmthStrength)
+            .putFloat("contrastStrength", options.contrastStrength)
+            .putFloat("shadowsStrength", options.shadowsStrength)
             .putBoolean("muteAudio", options.muteAudio)
+            .putString("audioQuality", options.audioQuality.name)
+            .putBoolean("keepHdr", options.keepHdr)
             .apply()
+    }
+
+    fun loadCustomPresets(): List<CustomPreset> {
+        val raw = prefs.getString("customPresetsJson", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { idx ->
+                val obj = arr.optJSONObject(idx) ?: return@mapNotNull null
+                val id = obj.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val name = obj.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                CustomPreset(
+                    id = id,
+                    name = name,
+                    deblockStrength = obj.optDouble("deblock", 0.25).toFloat().coerceIn(0f, 1f),
+                    denoiseStrength = obj.optDouble("denoise", 0.45).toFloat().coerceIn(0f, 1f),
+                    detailStrength = obj.optDouble("detail", 0.65).toFloat().coerceIn(0f, 1f),
+                    clarityStrength = obj.optDouble("clarity", 0.25).toFloat().coerceIn(0f, 1f),
+                    vibranceStrength = obj.optDouble("vibrance", 0.10).toFloat().coerceIn(0f, 1f),
+                    exposureStrength = obj.optDouble("exposure", 0.0).toFloat().coerceIn(-1f, 1f),
+                    warmthStrength = obj.optDouble("warmth", 0.0).toFloat().coerceIn(-1f, 1f),
+                    contrastStrength = obj.optDouble("contrast", 0.0).toFloat().coerceIn(-1f, 1f),
+                    shadowsStrength = obj.optDouble("shadows", 0.0).toFloat().coerceIn(-1f, 1f),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveCustomPresets(presets: List<CustomPreset>) {
+        val arr = JSONArray()
+        presets.forEach { preset ->
+            arr.put(
+                JSONObject().apply {
+                    put("id", preset.id)
+                    put("name", preset.name)
+                    put("deblock", preset.deblockStrength.toDouble())
+                    put("denoise", preset.denoiseStrength.toDouble())
+                    put("detail", preset.detailStrength.toDouble())
+                    put("clarity", preset.clarityStrength.toDouble())
+                    put("vibrance", preset.vibranceStrength.toDouble())
+                    put("exposure", preset.exposureStrength.toDouble())
+                    put("warmth", preset.warmthStrength.toDouble())
+                    put("contrast", preset.contrastStrength.toDouble())
+                    put("shadows", preset.shadowsStrength.toDouble())
+                },
+            )
+        }
+        prefs.edit().putString("customPresetsJson", arr.toString()).apply()
     }
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(name: String?, fallback: T): T {

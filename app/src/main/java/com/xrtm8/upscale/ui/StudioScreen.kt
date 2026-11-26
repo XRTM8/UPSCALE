@@ -35,6 +35,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Compare
 import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Share
@@ -78,15 +79,19 @@ import com.xrtm8.upscale.engine.LiveShaderParams
 import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.CustomPreset
 import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
 import com.xrtm8.upscale.model.ExportState
 import com.xrtm8.upscale.model.FramingMode
 import com.xrtm8.upscale.model.OutputResolution
 import com.xrtm8.upscale.model.PostFormat
+import com.xrtm8.upscale.ui.components.BatchQueueBottomSheet
+import com.xrtm8.upscale.ui.components.ExportStatusStrip
 import com.xrtm8.upscale.ui.components.OutputBottomSheet
 import com.xrtm8.upscale.ui.components.ProcessingBottomSheet
 import com.xrtm8.upscale.ui.components.RecentExportsBottomSheet
+import com.xrtm8.upscale.ui.components.UpdateNoticeStrip
 import com.xrtm8.upscale.ui.components.VideoPreviewStage
 import com.xrtm8.upscale.ui.components.formatSizeMb
 import com.xrtm8.upscale.ui.theme.LocalAmoledWhite
@@ -111,11 +116,19 @@ fun StudioScreen(
     onSetShowResult: (Boolean) -> Unit,
     onUpdateOptions: ((ExportOptions) -> ExportOptions) -> Unit,
     onApplyPreset: (EnhancementPreset) -> Unit,
+    onApplyCustomPreset: (CustomPreset) -> Unit,
+    onSaveCustomPreset: (String) -> Unit,
+    onDeleteCustomPreset: (String) -> Unit,
     onResetFilters: () -> Unit,
     onSaveSnapshot: (Bitmap) -> Unit,
     onSnapshotFailed: () -> Unit,
     onStartExport: () -> Unit,
     onCancelExport: () -> Unit,
+    onPickBatchVideos: () -> Unit,
+    onRemoveBatchItem: (String) -> Unit,
+    onClearDoneBatch: () -> Unit,
+    onStartBatchExport: () -> Unit,
+    onSeekPreview: (Long) -> Unit,
     onOpenOutput: () -> Unit,
     onShareOutput: () -> Unit,
     onOpenRecent: (RecentExportItem) -> Unit,
@@ -236,6 +249,26 @@ fun StudioScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(pillBg)
+                                .border(0.5.dp, barBorder, CircleShape)
+                                .clickable(enabled = !state.isLocked) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onOpenSheet(StudioSheet.BATCH)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Layers,
+                                contentDescription = strings.batchQueue,
+                                tint = if (state.batchQueue.isNotEmpty()) accentText else primaryText,
+                                modifier = Modifier.size(17.dp),
+                            )
+                        }
+
                         if (state.recentExports.isNotEmpty()) {
                             Box(
                                 modifier = Modifier
@@ -350,7 +383,11 @@ fun StudioScreen(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "\u2066${state.options.postFormat.aspectLabel}\u2069",
+                            text = if (state.options.postFormat == PostFormat.ORIGINAL && state.activePreviewMetadata != null) {
+                                "\u2066${state.activePreviewMetadata!!.displayWidth}:${state.activePreviewMetadata!!.displayHeight}\u2069"
+                            } else {
+                                "\u2066${state.options.postFormat.aspectLabel}\u2069"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = primaryText,
                             fontWeight = FontWeight.Bold,
@@ -374,6 +411,7 @@ fun StudioScreen(
                     previewZoom = state.previewZoom,
                     showResultPreview = state.showResultPreview,
                     isLocked = state.isLocked,
+                    seekRequest = state.seekRequest,
                     recentExport = state.recentExport,
                     strings = strings,
                     onPickVideo = onPickVideo,
@@ -511,7 +549,7 @@ fun StudioScreen(
 
             ExportStatusStrip(
                 exportState = state.exportState,
-                sourceSizeBytes = state.source?.sizeBytes ?: 0L,
+                source = state.source,
                 strings = strings,
                 onCancel = onCancelExport,
                 onOpen = onOpenOutput,
@@ -560,11 +598,19 @@ fun StudioScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 val (outW, outH) = state.targetDimensions()
+                val currentPlan = state.currentPlan()
                 val formatLabel = when (state.options.postFormat) {
+                    PostFormat.ORIGINAL -> strings.originalFormat
                     PostFormat.REEL -> strings.reel
                     PostFormat.FEED -> strings.feed
                     PostFormat.STORY -> strings.story
                     PostFormat.LANDSCAPE -> strings.landscape
+                }
+                val estSummary = if (currentPlan != null) {
+                    val estMb = (currentPlan.estimatedBytes / (1024.0 * 1024.0)).coerceAtLeast(0.1)
+                    " · \u2066~%.1f MB\u2069".format(estMb)
+                } else {
+                    ""
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -572,7 +618,7 @@ fun StudioScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "${state.options.platform.label} · $formatLabel · \u2066$outW × $outH\u2069",
+                        text = "${state.options.platform.label} · $formatLabel · \u2066$outW × $outH\u2069$estSummary",
                         style = MaterialTheme.typography.labelSmall,
                         color = secondaryText,
                     )
@@ -649,9 +695,13 @@ fun StudioScreen(
                 options = state.options,
                 source = state.source,
                 capabilities = state.capabilities,
+                customPresets = state.customPresets,
                 strings = strings,
                 onUpdateOptions = onUpdateOptions,
                 onApplyPreset = onApplyPreset,
+                onApplyCustomPreset = onApplyCustomPreset,
+                onSaveCustomPreset = onSaveCustomPreset,
+                onDeleteCustomPreset = onDeleteCustomPreset,
                 onResetFilters = onResetFilters,
                 onDismiss = onCloseSheet,
             )
@@ -662,6 +712,7 @@ fun StudioScreen(
                 plan = state.currentPlan(),
                 strings = strings,
                 onUpdateOptions = onUpdateOptions,
+                onSeekPreview = onSeekPreview,
                 onDismiss = onCloseSheet,
             )
             StudioSheet.EXPORTS -> RecentExportsBottomSheet(
@@ -670,6 +721,16 @@ fun StudioScreen(
                 onOpen = onOpenRecent,
                 onShare = onShareRecent,
                 onImport = onImportRecent,
+                onDismiss = onCloseSheet,
+            )
+            StudioSheet.BATCH -> BatchQueueBottomSheet(
+                items = state.batchQueue,
+                isBatchRunning = state.isBatchRunning,
+                strings = strings,
+                onAddVideos = onPickBatchVideos,
+                onRemoveItem = onRemoveBatchItem,
+                onClearDone = onClearDoneBatch,
+                onStartBatch = onStartBatchExport,
                 onDismiss = onCloseSheet,
             )
             StudioSheet.NONE -> {}
@@ -776,301 +837,5 @@ private fun StudioDockItem(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-@Composable
-private fun ExportStatusStrip(
-    exportState: ExportState,
-    sourceSizeBytes: Long,
-    strings: StudioStrings,
-    onCancel: () -> Unit,
-    onOpen: () -> Unit,
-    onShare: () -> Unit,
-) {
-    if (exportState is ExportState.Idle) return
-    val isAmoledWhite = LocalAmoledWhite.current
-    val cardBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
-    val cardBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
-    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
-    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(cardBg)
-            .border(0.5.dp, cardBorder, RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        when (exportState) {
-            ExportState.Preparing -> {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(strings.preparing, style = MaterialTheme.typography.labelMedium)
-                    OutlinedButton(
-                        onClick = onCancel,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(30.dp),
-                    ) {
-                        Text(strings.cancel, style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = accentFill,
-                    trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
-                )
-            }
-            is ExportState.Running -> {
-                val eta = exportState.estimatedRemainingSeconds(System.currentTimeMillis())
-                val etaText = if (eta != null) " · ${strings.etaSeconds.format(eta)}" else ""
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "${strings.exporting} · \u2066${(exportState.progress * 100f).roundToInt()}%\u2069$etaText",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    OutlinedButton(
-                        onClick = onCancel,
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(30.dp),
-                    ) {
-                        Text(strings.cancel, style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                LinearProgressIndicator(
-                    progress = { exportState.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = accentFill,
-                    trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
-                )
-            }
-            is ExportState.Completed -> {
-                val sizeCompare = if (sourceSizeBytes > 0L && exportState.metadata.sizeBytes > 0L) {
-                    " · \u2066${formatSizeMb(sourceSizeBytes)} → ${formatSizeMb(exportState.metadata.sizeBytes)}\u2069"
-                } else {
-                    ""
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = strings.exportComplete,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = StudioColors.Success,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = "${strings.savedToGallery}$sizeCompare",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = secondaryText,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton(
-                            onClick = onOpen,
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp),
-                        ) {
-                            Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(strings.openInGallery, style = MaterialTheme.typography.labelSmall)
-                        }
-                        Button(
-                            onClick = onShare,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = accentFill,
-                                contentColor = StudioColors.PureWhite,
-                            ),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp),
-                        ) {
-                            Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(strings.shareVideo, style = MaterialTheme.typography.labelSmall, color = StudioColors.PureWhite, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-            ExportState.Cancelled -> {
-                Text(
-                    text = strings.exportCancelled,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = StudioColors.Warning,
-                )
-            }
-            is ExportState.Failed -> {
-                Text(
-                    text = "${strings.exportFailed}: ${strings.formatError(exportState.error)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = StudioColors.Danger,
-                )
-            }
-            ExportState.Idle -> {}
-        }
-    }
-}
-
-@Composable
-private fun UpdateNoticeStrip(
-    status: UpdateStatus,
-    strings: StudioStrings,
-    onDownload: () -> Unit,
-    onInstall: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    if (status is UpdateStatus.Idle) return
-    val isAmoledWhite = LocalAmoledWhite.current
-    val stripBg = if (isAmoledWhite) StudioColors.WhiteSurface else StudioColors.StudioSurface
-    val stripBorder = if (isAmoledWhite) StudioColors.WhiteBorder else StudioColors.StudioBorder
-    val primaryText = if (isAmoledWhite) StudioColors.DarkText else StudioColors.PureWhite
-    val secondaryText = if (isAmoledWhite) StudioColors.DarkTextMuted else StudioColors.MutedWhite
-    val accentFill = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyAccent
-    val accentText = if (isAmoledWhite) StudioColors.BurgundyDeep else StudioColors.BurgundyTextDark
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(stripBg)
-            .border(0.5.dp, stripBorder, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.SystemUpdateAlt,
-                    contentDescription = null,
-                    tint = if (status is UpdateStatus.Error) StudioColors.Danger else accentText,
-                    modifier = Modifier.size(15.dp),
-                )
-                val label = when (status) {
-                    UpdateStatus.Checking -> strings.checkingUpdate
-                    UpdateStatus.UpToDate -> strings.upToDate
-                    is UpdateStatus.Available -> "${strings.updateAvailable} · \u2066v${status.info.versionName}\u2069"
-                    is UpdateStatus.Downloading -> "${strings.downloadingUpdate} · \u2066${(status.progress * 100f).roundToInt()}%\u2069"
-                    is UpdateStatus.ReadyToInstall -> "${strings.updateReady} · \u2066v${status.info.versionName}\u2069"
-                    is UpdateStatus.Error -> status.message
-                    UpdateStatus.Idle -> ""
-                }
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = primaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                when (status) {
-                    is UpdateStatus.Available -> {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(accentFill)
-                                .clickable(onClick = onDownload)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text(
-                                text = strings.updateNow,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = StudioColors.PureWhite,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                    is UpdateStatus.ReadyToInstall -> {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(StudioColors.Success)
-                                .clickable(onClick = onInstall)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text(
-                                text = strings.installUpdate,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = StudioColors.AmoledBlack,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                    else -> {}
-                }
-
-                if (status !is UpdateStatus.Downloading) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(26.dp)) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = strings.close,
-                            tint = secondaryText,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        if (status is UpdateStatus.Available && status.info.releaseNotes.isNotBlank()) {
-            val summary = status.info.releaseNotes
-                .lineSequence()
-                .map { it.trim().removePrefix("-").removePrefix("*").trim() }
-                .filter { it.isNotBlank() && !it.startsWith("#") }
-                .take(2)
-                .joinToString(" · ")
-            if (summary.isNotBlank()) {
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = secondaryText,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        if (status is UpdateStatus.Downloading) {
-            LinearProgressIndicator(
-                progress = { status.progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp),
-                color = accentFill,
-                trackColor = if (isAmoledWhite) StudioColors.WhiteSurfaceElevated else StudioColors.StudioSurfaceElevated,
-            )
-        }
     }
 }

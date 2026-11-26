@@ -17,6 +17,9 @@ import com.xrtm8.upscale.engine.RecentExportItem
 import com.xrtm8.upscale.engine.UpdateStatus
 import com.xrtm8.upscale.model.AppError
 import com.xrtm8.upscale.model.AppLanguage
+import com.xrtm8.upscale.model.BatchItemStatus
+import com.xrtm8.upscale.model.BatchQueueItem
+import com.xrtm8.upscale.model.CustomPreset
 import com.xrtm8.upscale.model.DeviceCapabilities
 import com.xrtm8.upscale.model.EnhancementPreset
 import com.xrtm8.upscale.model.ExportOptions
@@ -30,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -40,6 +44,7 @@ enum class StudioSheet {
     PROCESSING,
     OUTPUT,
     EXPORTS,
+    BATCH,
 }
 
 enum class SnapshotStatus {
@@ -60,10 +65,14 @@ data class StudioUiState(
     val showSafeZones: Boolean = false,
     val previewZoom: Float = 1f,
     val showResultPreview: Boolean = false,
+    val seekRequest: Pair<Long, Long>? = null,
     val isImporting: Boolean = false,
     val error: AppError? = null,
     val snapshotStatus: SnapshotStatus? = null,
     val recentExports: List<RecentExportItem> = emptyList(),
+    val customPresets: List<CustomPreset> = emptyList(),
+    val batchQueue: List<BatchQueueItem> = emptyList(),
+    val isBatchRunning: Boolean = false,
     val updateStatus: UpdateStatus = UpdateStatus.Idle,
     val updateBannerVisible: Boolean = false,
 ) {
@@ -71,7 +80,7 @@ data class StudioUiState(
         get() = recentExports.firstOrNull()
 
     val isExportRunning: Boolean
-        get() = exportState is ExportState.Preparing || exportState is ExportState.Running
+        get() = isBatchRunning || exportState is ExportState.Preparing || exportState is ExportState.Running
 
     val isLocked: Boolean
         get() = isImporting || isExportRunning
@@ -94,7 +103,12 @@ data class StudioUiState(
         }
 
     fun targetDimensions(): Pair<Int, Int> =
-        ExportPlanCalculator.targetDimensions(options.postFormat, options.resolution)
+        ExportPlanCalculator.targetDimensions(
+            format = options.postFormat,
+            resolution = options.resolution,
+            sourceWidth = source?.displayWidth ?: 0,
+            sourceHeight = source?.displayHeight ?: 0,
+        )
 
     fun currentPlan(): ExportPlan? {
         val meta = source ?: return null
@@ -111,6 +125,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
             language = prefs.loadLanguage(),
             isAmoledWhite = prefs.loadAmoledWhite(),
             options = prefs.loadOptions(),
+            customPresets = prefs.loadCustomPresets(),
         ),
     )
     val uiState: StateFlow<StudioUiState> = _uiState.asStateFlow()
@@ -322,6 +337,42 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         updateOptions { it.withPreset(preset) }
     }
 
+    fun applyCustomPreset(custom: CustomPreset) {
+        updateOptions { it.withCustomPreset(custom) }
+    }
+
+    fun saveCustomPreset(rawName: String) {
+        val name = rawName.trim().take(24)
+        if (name.isBlank()) return
+        val opts = _uiState.value.options
+        val preset = CustomPreset(
+            id = java.util.UUID.randomUUID().toString(),
+            name = name,
+            deblockStrength = opts.deblockStrength,
+            denoiseStrength = opts.denoiseStrength,
+            detailStrength = opts.detailStrength,
+            clarityStrength = opts.clarityStrength,
+            vibranceStrength = opts.vibranceStrength,
+            exposureStrength = opts.exposureStrength,
+            warmthStrength = opts.warmthStrength,
+            contrastStrength = opts.contrastStrength,
+            shadowsStrength = opts.shadowsStrength,
+        )
+        _uiState.update { state ->
+            val next = (listOf(preset) + state.customPresets).take(12)
+            prefs.saveCustomPresets(next)
+            state.copy(customPresets = next)
+        }
+    }
+
+    fun deleteCustomPreset(id: String) {
+        _uiState.update { state ->
+            val next = state.customPresets.filterNot { it.id == id }
+            prefs.saveCustomPresets(next)
+            state.copy(customPresets = next)
+        }
+    }
+
     fun resetEnhancementDefaults() {
         updateOptions { it.withPreset(EnhancementPreset.NATURAL) }
     }
@@ -330,6 +381,158 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { state ->
             syncShaderParams(state.options, state.splitCompareEnabled, state.splitPosition, showResult)
             state.copy(showResultPreview = showResult)
+        }
+    }
+
+    fun requestPreviewSeek(positionMs: Long) {
+        _uiState.update { it.copy(seekRequest = positionMs.coerceAtLeast(0L) to System.nanoTime()) }
+    }
+
+    fun enqueueBatchVideos(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    runCatching {
+                        runCatching {
+                            app.contentResolver.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            )
+                        }
+                        val meta = MediaInspector.inspectUri(app, uri).getOrThrow()
+                        BatchQueueItem(
+                            id = java.util.UUID.randomUUID().toString(),
+                            metadata = meta,
+                        )
+                    }.getOrNull()
+                }
+            }
+            if (added.isNotEmpty()) {
+                _uiState.update { state ->
+                    val existingUris = state.batchQueue.map { it.metadata.uriString }.toSet()
+                    val unique = added.filterNot { it.metadata.uriString in existingUris }
+                    state.copy(batchQueue = state.batchQueue + unique)
+                }
+            }
+        }
+    }
+
+    fun removeBatchItem(id: String) {
+        _uiState.update { state ->
+            if (state.isBatchRunning) return@update state
+            state.copy(batchQueue = state.batchQueue.filterNot { it.id == id })
+        }
+    }
+
+    fun clearCompletedBatchItems() {
+        _uiState.update { state ->
+            state.copy(
+                batchQueue = state.batchQueue.filter {
+                    it.status == BatchItemStatus.QUEUED || it.status == BatchItemStatus.RUNNING
+                },
+            )
+        }
+    }
+
+    @androidx.media3.common.util.UnstableApi
+    fun startBatchExport() {
+        val state = _uiState.value
+        if (state.isLocked) return
+        val queued = state.batchQueue.filter { it.status == BatchItemStatus.QUEUED }
+        if (queued.isEmpty()) return
+        val app = getApplication<Application>()
+
+        _uiState.update { it.copy(isBatchRunning = true, activeSheet = StudioSheet.NONE, error = null) }
+
+        viewModelScope.launch {
+            try {
+                for (item in queued) {
+                    val caps = withContext(Dispatchers.IO) {
+                        MediaInspector.inspectDeviceCapabilities(app)
+                    }
+                    val itemOptions = _uiState.value.options.copy(
+                        cropOffsetX = 0f,
+                        cropOffsetY = 0f,
+                        trimStartMs = 0L,
+                        trimEndMs = item.metadata.durationMs,
+                    ).normalizedForPlatform(caps)
+
+                    val planResult = ExportPlanCalculator.buildPlan(item.metadata, itemOptions, caps)
+                    if (planResult.isFailure) {
+                        val errMsg = planResult.exceptionOrNull()?.message
+                        _uiState.update { s ->
+                            s.copy(
+                                batchQueue = s.batchQueue.map {
+                                    if (it.id == item.id) it.copy(status = BatchItemStatus.FAILED, errorMessage = errMsg) else it
+                                },
+                            )
+                        }
+                        continue
+                    }
+
+                    val plan = planResult.getOrThrow()
+                    _uiState.update { s ->
+                        s.copy(
+                            batchQueue = s.batchQueue.map {
+                                if (it.id == item.id) it.copy(status = BatchItemStatus.RUNNING) else it
+                            },
+                        )
+                    }
+                    ExportRepository.setState(ExportState.Preparing)
+                    ExportForegroundService.start(app, item.metadata, itemOptions, plan)
+
+                    val terminal = ExportRepository.state.first { st ->
+                        st is ExportState.Completed || st is ExportState.Cancelled || st is ExportState.Failed
+                    }
+                    when (terminal) {
+                        is ExportState.Completed -> {
+                            _uiState.update { s ->
+                                s.copy(
+                                    batchQueue = s.batchQueue.map {
+                                        if (it.id == item.id) {
+                                            it.copy(
+                                                status = BatchItemStatus.COMPLETED,
+                                                outputUriString = terminal.outputUriString,
+                                                outputSizeBytes = terminal.metadata.sizeBytes,
+                                            )
+                                        } else {
+                                            it
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        ExportState.Cancelled -> {
+                            _uiState.update { s ->
+                                s.copy(
+                                    batchQueue = s.batchQueue.map {
+                                        if (it.id == item.id) it.copy(status = BatchItemStatus.CANCELLED) else it
+                                    },
+                                )
+                            }
+                            break
+                        }
+                        is ExportState.Failed -> {
+                            _uiState.update { s ->
+                                s.copy(
+                                    batchQueue = s.batchQueue.map {
+                                        if (it.id == item.id) {
+                                            it.copy(status = BatchItemStatus.FAILED, errorMessage = terminal.error.toString())
+                                        } else {
+                                            it
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                        else -> {}
+                    }
+                }
+            } finally {
+                _uiState.update { it.copy(isBatchRunning = false) }
+            }
         }
     }
 
@@ -525,6 +728,8 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
                 vibrance = options.vibranceStrength,
                 exposure = options.exposureStrength,
                 warmth = options.warmthStrength,
+                contrast = options.contrastStrength,
+                shadows = options.shadowsStrength,
                 splitX = if (splitEnabled && !showingExportedResult) splitPos else -1f,
                 showOriginalOnly = showingExportedResult,
             ),
